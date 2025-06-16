@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Register</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f5f7fa; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        .container { background: #fff; padding: 2rem 2.5rem; border-radius: 12px; box-shadow: 0 8px 40px 0 #b3c1c8; min-width: 330px; }
+        .container h2 { text-align: center; color: #111927; }
+        .form-control { width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 7px; border: 1px solid #d6dee6; background: #f7f9fa; }
+        .btn { width: 100%; padding: 10px; border-radius: 7px; border: none; background: #16a34a; color: #fff; font-weight: bold; font-size: 1em; }
+        .btn:hover { background: #166534; }
+        .link { text-align: center; margin-top: 10px; }
+        .link a { color: #2563eb; text-decoration: none; }
+        .link a:hover { text-decoration: underline; }
+        .messages { color: #d8000c; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Create Account</h2>
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="messages">
+                {% for message in messages %}
+                    <div>{{ message }}</div>
+                {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        <form method="post">
+            <input class="form-control" type="text" name="username" placeholder="Username" required>
+            <input class="form-control" type="password" name="password" placeholder="Password" required>
+            <input class="btn" type="submit" value="Register">
+        </form>
+        <div class="link">
+            Already have an account? <a href="{{ url_for('login') }}">Login here</a>
+        </div>
+    </div>
+</body>
+</html>

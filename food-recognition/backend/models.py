@@ -1,7 +1,8 @@
 # food-recognition/backend/models.py
 
 from flask_sqlalchemy import SQLAlchemy
-
+from datetime import datetime
+from backend import db  # ✅ 改为绝对导入
 db = SQLAlchemy()
 
 class User(db.Model):
@@ -11,7 +12,8 @@ class User(db.Model):
 
 class AnalysisHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    food_name = db.Column(db.String(120))
-    result_json = db.Column(db.Text)  # 存储营养分析的json文本
-    timestamp = db.Column(db.DateTime, server_default=db.func.now())
+    user_id = db.Column(db.Integer, nullable=False)
+    food_name = db.Column(db.String(100))
+    nutrients = db.Column(db.Text)
+    ai_advice = db.Column(db.Text)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)

@@ -24,7 +24,7 @@ client = OpenAI(
 def create_app():
     app = Flask(__name__, template_folder='templates', static_folder='static')
     app.config['SECRET_KEY'] = 'sk-58530a01a7a94d66a92c010a8a86f0a9'  # 换成你自己的
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///C:/Users/GM7/PycharmProjects/SummerProject/food-recognition/app.db'
     db.init_app(app)
 
     CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -45,12 +45,11 @@ def create_app():
             if user and check_password_hash(user.password, password):
                 session['user_id'] = user.id
                 session['username'] = user.username
-                flash('Login successful!')
+                flash('Login successful!', 'success')  # ← 这里
                 return redirect(url_for('dashboard'))
             else:
-                flash('Invalid username or password')
+                flash('Invalid username or password', 'danger')  # ← 这里
                 return redirect(url_for('login'))
-        # GET 请求时什么都不 flash！
         return render_template('login.html', show_register=False)
 
 
@@ -69,16 +68,15 @@ def create_app():
             username = request.form['username']
             password = request.form['password']
             if User.query.filter_by(username=username).first():
-                flash('Username already exists')
+                flash('Username already exists', 'danger')  # ← 这里
                 return redirect(url_for('register'))
             hashed_password = generate_password_hash(password)
             new_user = User(username=username, password=hashed_password)
             db.session.add(new_user)
             db.session.commit()
-            # 注册成功，自动登录
             session['user_id'] = new_user.id
             session['username'] = new_user.username
-            flash('Registration successful! You are now logged in.')
+            flash('Registration successful! You are now logged in.', 'success')  # ← 这里
             return redirect(url_for('dashboard'))
         return render_template('login.html', show_register=True)
 
@@ -142,7 +140,10 @@ def create_app():
                 response = client.chat.completions.create(
                     model="deepseek-chat",
                     messages=[
-                        {"role": "system", "content": "You are a professional nutritionist."},
+                        {"role": "system", "content":  "You are a professional nutritionist. "
+                                                       "Please give concise, practical advice in English only, no more than 3 short sentences. "
+                                                       "Do not provide lengthy analysis or redundant explanations."
+                         },
                         {"role": "user", "content": prompt}
                     ],
                     stream=False
@@ -151,8 +152,22 @@ def create_app():
             except Exception as e:
                 ai_advice = f"AI analysis failed: {e}"
 
-            # 5. 保存历史，渲染
-            # ...略...
+            from backend.models import AnalysisHistory  # 确保已经导入
+            import json  # 用于转化 nutrients 为字符串
+
+            # Read checkbox input from the form
+            save_history = request.form.get('save_history') == 'true'
+
+            # Save to database if checkbox is checked
+            if save_history and 'user_id' in session:
+                history = AnalysisHistory(
+                    user_id=session['user_id'],
+                    food_name=food_name,
+                    nutrients=json.dumps(nutrients),
+                    ai_advice=ai_advice
+                )
+                db.session.add(history)
+                db.session.commit()
 
             return render_template(
                 'analyze_result.html',
@@ -161,6 +176,21 @@ def create_app():
                 ai_advice=ai_advice
             )
         return render_template('upload_file.html')
+
+    @app.route('/history')
+    def history():
+        if 'user_id' not in session:
+            flash('Please log in first!')
+            return redirect(url_for('login'))
+
+        records = AnalysisHistory.query.filter_by(user_id=session['user_id']).order_by(
+            AnalysisHistory.timestamp.desc()).all()
+        for r in records:
+            try:
+                r.nutrients_dict = json.loads(r.nutrients)
+            except Exception:
+                r.nutrients_dict = {}
+        return render_template('history.html', records=records)
 
     return app
 

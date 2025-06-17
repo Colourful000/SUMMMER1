@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Nutrition History</title>
+    <!-- 保持深色和未来感 -->
+    <style>
+        body { background: #181b28; color: #e2e6f3; font-family: 'Segoe UI', Arial, sans-serif;}
+        .history-card { background: #23263a; border-radius: 18px; margin-bottom: 22px; padding: 22px 28px;}
+        .advice { background: #212245; color: #fafcff; border-radius: 10px; padding: 13px; margin-top: 7px;}
+    </style>
+</head>
+<body>
+    <h2 style="text-align:center;color:#84c8fa;">My Nutrition History</h2>
+    <div style="max-width:700px; margin:0 auto;">
+        {% for item in records %}
+            <div class="history-card">
+                <h5>{{ item.food_name }}</h5>
+                <div>Date: {{ item.timestamp.strftime('%Y-%m-%d %H:%M') }}</div>
+                <div class="nutrients-table">
+                    <table style="width:100%;">
+                        <tr>
+                            {% for key in item.nutrients_dict.keys() %}
+                                <th>{{ key|capitalize }}</th>
+                            {% endfor %}
+                        </tr>
+                        <tr>
+                            {% for value in item.nutrients_dict.values() %}
+                                <td>{{ value }}</td>
+                            {% endfor %}
+                        </tr>
+                    </table>
+                </div>
+                {% if item.ai_advice %}
+                <div class="advice"><b>AI Advice:</b><br>{{ item.ai_advice }}</div>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+</body>
+</html>

@@ -1,10 +1,11 @@
-# food-recognition/init_db.py
+import os
 
-from app import create_app
 from backend.models import db
+from app import create_app
 
 app = create_app()
-
 with app.app_context():
     db.create_all()
-    print("Database tables created.")
+    print("Tables created.")
+print("Current working directory:", os.getcwd())
+print("Database URI:", app.config['SQLALCHEMY_DATABASE_URI'])

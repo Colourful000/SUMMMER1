@@ -14,15 +14,21 @@
         button:hover { background: #1d4db6; }
         .toggle { text-align: center; margin-top: 10px; }
         .toggle a { color: #72c6ff; text-decoration: underline; cursor: pointer; }
-        .flash { background: #ff2343cc; color: #fff; padding: 10px; border-radius: 6px; text-align: center; margin-bottom: 10px; }
+        .flash { padding: 10px; border-radius: 6px; text-align: center; margin-bottom: 10px; font-weight: bold; }
+        .flash-success { background: #29cd7aee; color: #fff; }
+        .flash-danger { background: #ff2343cc; color: #fff; }
+        .flash-warning { background: #ffe066; color: #222; }
+        .flash-info { background: #4f8cff; color: #fff; }
     </style>
 </head>
 <body>
     <div class="auth-box">
         <h2>{% if show_register %}Register{% else %}Login{% endif %}</h2>
-        {% with messages = get_flashed_messages() %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
-            <div class="flash">{{ messages[0] }}</div>
+            {% for category, message in messages %}
+              <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
           {% endif %}
         {% endwith %}
         <form method="POST" action="{% if show_register %}{{ url_for('register') }}{% else %}{{ url_for('login') }}{% endif %}">

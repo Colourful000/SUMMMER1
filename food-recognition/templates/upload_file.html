@@ -84,6 +84,11 @@
                 <input type="file" name="file" id="file-input" accept="image/*" required onchange="previewImage(event)">
                 <i class="fa-solid fa-cloud-arrow-up"></i> Choose Image
             </label>
+             <!-- ✅ 添加保存历史记录选项 -->
+            <label style="display: block; margin-top: 10px; font-size: 0.95em;">
+                 <input type="checkbox" name="save_history" value="true">
+                 Save this result to <strong>"My Nutrition"</strong>
+             </label>
             <img id="preview" style="display:none;">
             <button type="submit" class="analyze-btn" id="analyze-btn" disabled>Analyze</button>
         </form>

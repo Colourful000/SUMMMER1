@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Voice Input - Nutrition App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: #191b24;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            color: #fff;
+        }
+        .upload-container {
+            max-width: 400px;
+            margin: 60px auto;
+            padding: 36px 22px 22px 22px;
+            background: #272a3b;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(24, 32, 96, 0.16);
+            text-align: center;
+        }
+        h2 {
+            margin-bottom: 18px;
+        }
+        .voice-record-btn {
+            display: inline-block;
+            background: #4f8cff;
+            color: #fff;
+            padding: 14px 38px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            cursor: pointer;
+            margin-bottom: 16px;
+            transition: background 0.2s;
+            border: none;
+            outline: none;
+        }
+        .voice-record-btn.recording {
+            background: #e84747;
+            animation: pulse 1.2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(232,71,71, 0.7);}
+            70% { box-shadow: 0 0 0 12px rgba(232,71,71, 0);}
+            100% { box-shadow: 0 0 0 0 rgba(232,71,71, 0);}
+        }
+        .voice-result {
+            font-size: 1.07em;
+            margin: 10px 0 14px 0;
+            color: #7bee7b;
+            min-height: 20px;
+        }
+        .analyze-btn {
+            display: block;
+            width: 100%;
+            margin: 16px 0 0 0;
+            padding: 12px 0;
+            background: #5c7aff;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .analyze-btn:disabled {
+            background: #aaa;
+            cursor: not-allowed;
+        }
+        .back-link {
+            display: block;
+            margin-top: 18px;
+            color: #72c6ff;
+            text-decoration: underline;
+        }
+        label, select, input[type="checkbox"] {
+            font-size: 1em;
+        }
+    </style>
+</head>
+<body>
+<div class="upload-container">
+    <h2><i class="fa-solid fa-microphone"></i> Voice Input Food Name</h2>
+    <form id="voice-form" action="{{ url_for('voice_input') }}" method="POST">
+        <!-- 语音录入按钮 -->
+        <button type="button" class="voice-record-btn" id="voice-record-btn">
+            <i class="fa-solid fa-microphone"></i> Press & Hold to Speak
+        </button>
+        <!-- 展示识别的食物名称 -->
+        <div class="voice-result" id="voice-result"></div>
+        <!-- 隐藏的文本域，存识别的食物名 -->
+        <input type="hidden" name="food_text" id="food_text" required>
+        <!-- 保存历史 -->
+        <label style="display: block; margin-top: 10px;">
+            <input type="checkbox" name="save_history" value="true">
+            Save this result to <strong>"My Nutrition"</strong>
+        </label>
+        <!-- tag selection start -->
+        <label for="tag" style="display:block; margin-top: 14px;">
+            Select a meal tag:
+            <select name="tag" id="tag" required style="margin-left: 8px; border-radius: 6px; padding: 2px 8px;">
+                <option value="" disabled selected>-- Please select --</option>
+                <option value="breakfast">Breakfast</option>
+                <option value="lunch">Lunch</option>
+                <option value="dinner">Dinner</option>
+                <option value="brunch">Brunch</option>
+                <option value="afternoon_tea">Afternoon Tea</option>
+                <option value="late_night">Late Night</option>
+                <option value="snack">Snack</option>
+            </select>
+        </label>
+        <button type="submit" class="analyze-btn" id="analyze-btn" disabled>Analyze</button>
+    </form>
+    <a href="{{ url_for('dashboard') }}" class="back-link">← Back to Dashboard</a>
+</div>
+<script>
+let mediaRecorder;
+let audioChunks = [];
+const voiceBtn = document.getElementById('voice-record-btn');
+const voiceResult = document.getElementById('voice-result');
+const foodInput = document.getElementById('food_text');
+const analyzeBtn = document.getElementById('analyze-btn');
+
+let isRecording = false;
+
+// 检查浏览器支持
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    voiceResult.textContent = 'This browser does not support microphone access.';
+    voiceBtn.disabled = true;
+}
+
+// 提前请求麦克风权限
+window.onload = function() {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(() => {
+                // 权限ok
+            })
+            .catch(() => {
+                voiceResult.textContent = 'Please allow microphone access in your browser/app settings!';
+                voiceBtn.disabled = true;
+            });
+    }
+};
+
+
+voiceBtn.onmousedown = async function(e) {
+    if (isRecording) return;
+    isRecording = true;
+    audioChunks = [];
+    voiceResult.textContent = 'Listening...';
+    voiceBtn.classList.add('recording');
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+
+        mediaRecorder.ondataavailable = function(e) {
+            audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async function() {
+            stream.getTracks().forEach(track => track.stop());
+            voiceBtn.classList.remove('recording');
+            voiceResult.textContent = "Recognizing...";
+            isRecording = false;
+            // 上传语音文件
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'voice.webm');
+            try {
+                const res = await fetch('/speech_to_text', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data && data.text && data.text.trim()) {
+                    voiceResult.textContent = 'Detected: ' + data.text.trim();
+                    foodInput.value = data.text.trim();
+                    analyzeBtn.disabled = false;
+                } else {
+                    voiceResult.textContent = 'Recognition failed, please try again.';
+                    foodInput.value = '';
+                    analyzeBtn.disabled = true;
+                }
+            } catch (e) {
+                voiceResult.textContent = 'Network/server error, please try again.';
+                foodInput.value = '';
+                analyzeBtn.disabled = true;
+            }
+        };
+
+        mediaRecorder.start();
+    } catch (err) {
+        voiceBtn.classList.remove('recording');
+        isRecording = false;
+        voiceResult.textContent = 'Microphone unavailable or blocked.';
+    }
+};
+voiceBtn.onmouseup = function() {
+    if (mediaRecorder && isRecording) {
+        mediaRecorder.stop();
+    }
+};
+// 手机端支持触摸
+voiceBtn.ontouchstart = voiceBtn.onmousedown;
+voiceBtn.ontouchend = voiceBtn.onmouseup;
+</script>
+</body>
+</html>

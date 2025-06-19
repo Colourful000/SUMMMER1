@@ -9,39 +9,40 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="container">
-        <div class="dashboard-card">
-            <h1>Welcome, {{ username }}!</h1>
-            <p>This is your Nutrition Dashboard.<br>
+<div class="container">
+    <div class="dashboard-card">
+        <h1>Welcome, {{ username }}!</h1>
+        <p>This is your Nutrition Dashboard.<br>
             Here you'll be able to upload food images and get AI nutrition analysis.</p>
-            <a href="{{ url_for('logout') }}" class="logout-btn">Log Out</a>
-        </div>
+        <a href="{{ url_for('logout') }}" class="logout-btn">Log Out</a>
+    </div>
 
-        <!-- 三按钮上传区 -->
-        <div class="input-modes" style="display: flex; gap: 32px; justify-content: center; margin: 40px 0 30px 0;">
-            <button class="input-btn" id="voice-btn" title="Voice Input">
-                <i class="fa-solid fa-microphone"></i>
-                <span>Voice</span>
-            </button>
-            <button class="input-btn" id="gallery-btn" title="Gallery"
-                onclick='window.location.href="{{ url_for("upload_food") }}"'>
-                <i class="fa-solid fa-image"></i>
-                <span>Gallery</span>
-            </button>
-            <button class="input-btn" id="camera-btn" title="Camera">
-                <i class="fa-solid fa-camera"></i>
-                <span>Camera</span>
-            </button>
-        </div>
-        <!-- My Nutrition 按钮，风格一致，放底部居中 -->
-       <div style="display: flex; justify-content: center; margin-top: 40px;">
-         <button class="input-btn" id="nutrition-btn" title="My Nutrition"
-         onclick='window.location.href="{{ url_for("history") }}"'>
-         <i class="fa-solid fa-apple-whole"></i>
-         <span>My Nutrition</span>
+    <!-- 三按钮上传区 -->
+    <div class="input-modes" style="display: flex; gap: 32px; justify-content: center; margin: 40px 0 30px 0;">
+        <button class="input-btn" id="voice-btn" title="Voice Input"
+                onclick='window.location.href="{{ url_for("voice_input") }}"'>
+            <i class="fa-solid fa-microphone"></i>
+            <span>Voice</span>
         </button>
-       </div>
-
+        <button class="input-btn" id="gallery-btn" title="Gallery"
+                onclick='window.location.href="{{ url_for("upload_food") }}"'>
+            <i class="fa-solid fa-image"></i>
+            <span>Gallery</span>
+        </button>
+        <button class="input-btn" id="camera-btn" title="Camera"
+                onclick='window.location.href="{{ url_for("camera_upload") }}"'>
+            <i class="fa-solid fa-camera"></i>
+            <span>Camera</span>
+        </button>
+    </div>
+    <!-- My Nutrition 按钮，风格一致，放底部居中 -->
+    <div style="display: flex; justify-content: center; margin-top: 40px;">
+        <button class="input-btn" id="nutrition-btn" title="My Nutrition"
+                onclick='window.location.href="{{ url_for("history") }}"'>
+            <i class="fa-solid fa-apple-whole"></i>
+            <span>My Nutrition</span>
+        </button>
+    </div>
 
 
 </body>

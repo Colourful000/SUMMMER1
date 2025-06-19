@@ -27,21 +27,9 @@ def build_prompt(data):
     return s
 
 def set_routes(app):
-    @app.route('/')
-    def homepage():
-        resp = make_response(render_template("upload-file.html"))
-        resp.headers['Access-Control-Allow-Origin'] = '*'
-        return resp
 
 
-    @app.route('/url')
-    def detect_by_url_page():
-        return render_template("input-url.html")
 
-
-    @app.route('/webcam')
-    def detect_by_webcam_page():
-        return render_template("webcam-capture.html")
 
 
     @app.route('/analyze', methods=['POST', 'GET'])
@@ -85,23 +73,7 @@ def set_routes(app):
 
         return redirect('/')
 
-    @app.route('/api/nutrition/llm_analysis', methods=['POST'])
-    def llm_analysis():
-        data = request.json
-        prompt = build_prompt(data)
-        try:
-            response = client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
-                    {"role": "system", "content": "你是一个专业营养师，善于用科学、简明、温和的方式分析饮食并给出建议。"},
-                    {"role": "user", "content": prompt}
-                ],
-                stream=False
-            )
-            ai_reply = response.choices[0].message.content
-        except Exception as e:
-            ai_reply = f"分析失败: {e}"
-        return jsonify({"llm_analysis": ai_reply})
+
 
 
     @app.after_request

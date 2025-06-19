@@ -17,3 +17,4 @@ class AnalysisHistory(db.Model):
     nutrients = db.Column(db.Text)
     ai_advice = db.Column(db.Text)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    tag = db.Column(db.String(20))

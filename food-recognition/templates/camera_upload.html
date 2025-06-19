@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Upload Food Image - Nutrition App</title>
+    <title>Take Photo - Nutrition App</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -92,20 +92,18 @@
 </head>
 <body>
 <div class="upload-container">
-    <h2><i class="fa-solid fa-image"></i> Upload Food Image</h2>
-    <!-- 👇👇👇 改这里，action 改为 url_for('upload_food') 👇👇👇 -->
-    <form id="upload-form" action="{{ url_for('upload_food') }}" method="POST" enctype="multipart/form-data">
+    <h2><i class="fa-solid fa-camera"></i> Take Photo</h2>
+    <form id="camera-form" action="{{ url_for('upload_food') }}" method="POST" enctype="multipart/form-data">
+        <!-- 只允许拍照 -->
         <label class="custom-file-upload">
-            <input type="file" name="file" id="file-input" accept="image/*" required onchange="previewImage(event)">
-            <i class="fa-solid fa-cloud-arrow-up"></i> Choose Image
+            <input type="file" name="file" id="camera-input" accept="image/*" capture="environment" required onchange="previewImage(event)">
+            <i class="fa-solid fa-camera"></i> Take Photo
         </label>
-        <!-- ✅ 添加保存历史记录选项 -->
+        <!-- 你原有的保存历史记录/标签选择 -->
         <label style="display: block; margin-top: 10px; font-size: 0.95em;">
             <input type="checkbox" name="save_history" value="true">
             Save this result to <strong>"My Nutrition"</strong>
         </label>
-
-        <!-- tag selection start -->
         <label for="tag" style="display:block; margin-top: 14px; font-size: 0.95em;">
             Select a meal tag:
             <select name="tag" id="tag" required style="margin-left: 8px; border-radius: 6px; padding: 2px 8px;">
@@ -125,6 +123,10 @@
     <a href="{{ url_for('dashboard') }}" class="back-link">← Back to Dashboard</a>
 </div>
 <script>
+    // 自动弹出摄像头拍照（页面一加载就点）
+    window.onload = function() {
+        document.getElementById('camera-input').click();
+    };
     function previewImage(event) {
         const input = event.target;
         const preview = document.getElementById('preview');

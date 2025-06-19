@@ -10,12 +10,12 @@ from backend.constants import UPLOAD_FOLDER, CSV_FOLDER, DETECTION_FOLDER, SEGME
 from backend.models import db, User
 from werkzeug.security import generate_password_hash, check_password_hash
 from backend.models import AnalysisHistory
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session,jsonify, redirect, url_for
 from backend.routes import build_prompt
 from openai import OpenAI
 from backend.utils import *
-
-
+import whisper
+import json
 
 client = OpenAI(
     api_key="sk-58530a01a7a94d66a92c010a8a86f0a9",
@@ -101,7 +101,7 @@ def create_app():
             out_name, output_path, output_type, result_dict = process_image_file(
                 filename,
                 filepath,
-                "yolov5s",  # 小写且 weight_urls 里有的名字
+                "yolov8s",  # 小写且 weight_urls 里有的名字
                 False,  # tta
                 False,  # ensemble
                 0.15,  # min_conf
@@ -117,17 +117,26 @@ def create_app():
             # 假如 result_dict 结构是 {'names': [...], 'scores': [...], ...}
             # 选置信度最高的
             if result_dict and 'names' in result_dict and 'scores' in result_dict:
+                print("result_dict.keys():", result_dict.keys())
                 idx = int(np.argmax(result_dict['scores']))
                 food_name = result_dict['names'][idx]
-                # nutrients 部分如果 result_dict 里有，也直接提取。否则继续用 extract_food_and_nutrients(csv_name1)
+                print("Predicted food_name:", food_name)
                 nutrients = {}
-                # 例如 result_dict 可能有 'calories', 'protein', ...都可提取
                 for k in ['calories', 'protein', 'fat', 'carbs', 'fiber']:
                     if k in result_dict:
+                        print(k, ":", result_dict[k])
                         try:
                             nutrients[k] = result_dict[k][idx]
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            print(f"Error for {k}:", e)
+                            nutrients[k] = None
+                    else:
+                        nutrients[k] = None
+
+                # ⭐ 在这里加：如果全部为None就查csv库兜底
+                if all(v is None for v in nutrients.values()):
+                    nutrients = get_nutrient_from_db(food_name)
+
             else:
                 # 保底还是按 csv 方式
                 food_name, nutrients = extract_food_and_nutrients(csv_name1)
@@ -160,11 +169,13 @@ def create_app():
 
             # Save to database if checkbox is checked
             if save_history and 'user_id' in session:
+                tag = request.form.get('tag')
                 history = AnalysisHistory(
                     user_id=session['user_id'],
                     food_name=food_name,
                     nutrients=json.dumps(nutrients),
-                    ai_advice=ai_advice
+                    ai_advice=ai_advice,
+                    tag = tag
                 )
                 db.session.add(history)
                 db.session.commit()
@@ -192,9 +203,136 @@ def create_app():
                 r.nutrients_dict = {}
         return render_template('history.html', records=records)
 
+    @app.route('/delete_history/<int:history_id>', methods=['POST'])
+    def delete_history(history_id):
+        if 'user_id' not in session:
+            flash('Please log in first!')
+            return redirect(url_for('login'))
+        record = AnalysisHistory.query.filter_by(id=history_id, user_id=session['user_id']).first()
+        if record:
+            db.session.delete(record)
+            db.session.commit()
+            flash('Record deleted successfully!')
+        else:
+            flash('Record not found or no permission to delete.')
+        return redirect(url_for('history'))
+
+    model = whisper.load_model("base")
+
+    @app.route('/speech_to_text', methods=['POST'])
+    def speech_to_text():
+        # 确保 tmp 文件夹存在
+        if not os.path.exists('./tmp'):
+            os.makedirs('./tmp')
+        audio_file = request.files['audio']
+        audio_path = f"./tmp/{audio_file.filename}"
+        audio_file.save(audio_path)
+        # 转文字
+        result = model.transcribe(audio_path, language='en')
+        # 处理完后立刻删除临时文件
+        os.remove(audio_path)
+        return jsonify({'text': result['text']})
+
+    @app.route('/voice_input', methods=['GET', 'POST'])
+    def voice_input():
+        if 'user_id' not in session:
+            flash('Please log in first!')
+            return redirect(url_for('login'))
+        if request.method == 'POST':
+            food_text = request.form.get('food_text', '').strip()
+            save_history = request.form.get('save_history') == 'true'
+            tag = request.form.get('tag', None)
+
+            # --- 用你的自定义营养库查 ---
+            import pandas as pd
+            csv_file = 'nutrition_db.csv'  # 换成你的实际路径
+            nutrients = {k: None for k in ['calories', 'protein', 'fat', 'carbs', 'fiber']}
+            try:
+                df = pd.read_csv(csv_file)
+                result = df[df['name'].str.lower().str.contains(food_text.lower())]
+                if not result.empty:
+                    row = result.iloc[0]
+                    nutrients = {
+                        'calories': float(row['calories']),
+                        'protein': float(row['protein']),
+                        'fat': float(row['fat']),
+                        'carbs': float(row['carbs']),
+                        'fiber': float(row['fiber']),
+                    }
+            except Exception as e:
+                print('CSV 查找异常:', e)
+                # nutrients 仍为 None
+
+            # --- 后续 AI 分析等都不变 ---
+            data = {"food": food_text, "nutrients": nutrients, "user_info": session.get('username', '')}
+            prompt = build_prompt(data)
+            ai_advice = ""
+            try:
+                response = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[
+                        {"role": "system", "content": "You are a professional nutritionist. "
+                                                      "Please give concise, practical advice in English only, no more than 3 short sentences. "
+                                                      "Do not provide lengthy analysis or redundant explanations."
+                         },
+                        {"role": "user", "content": prompt}
+                    ],
+                    stream=False
+                )
+                ai_advice = response.choices[0].message.content
+            except Exception as e:
+                ai_advice = f"AI analysis failed: {e}"
+
+            # 保存历史
+            import json
+            if save_history and 'user_id' in session:
+                history = AnalysisHistory(
+                    user_id=session['user_id'],
+                    food_name=food_text,
+                    nutrients=json.dumps(nutrients),
+                    ai_advice=ai_advice,
+                    tag=tag
+                )
+                db.session.add(history)
+                db.session.commit()
+
+            return render_template(
+                'analyze_result.html',
+                food_name=food_text,
+                nutrients=nutrients,
+                ai_advice=ai_advice
+            )
+        return render_template('voice_input.html')
+
+    @app.route('/camera_upload', methods=['GET'])
+    def camera_upload():
+        if 'user_id' not in session:
+            flash('Please log in first!')
+            return redirect(url_for('login'))
+        return render_template('camera_upload.html')
+
+    @app.route('/')
+    def index():
+        print("=== Root / visited, should redirect to /login ===")
+        return redirect(url_for('login'))
+
     return app
 
 
+def get_nutrient_from_db(food_name):
+    import pandas as pd
+    df = pd.read_csv('nutrition_db.csv')
+    result = df[df['name'].str.lower().str.contains(food_name.lower())]
+    if not result.empty:
+        row = result.iloc[0]
+        return {
+            'calories': float(row['calories']),
+            'protein': float(row['protein']),
+            'fat': float(row['fat']),
+            'carbs': float(row['carbs']),
+            'fiber': float(row['fiber']),
+        }
+    return {k: None for k in ['calories', 'protein', 'fat', 'carbs', 'fiber']}
 
 
 

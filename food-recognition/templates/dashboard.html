@@ -5,45 +5,93 @@
     <title>Dashboard - Nutrition App</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
-    <!-- Font Awesome 最新CDN -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* 防止圆形按钮字体溢出 */
+        .circle-btn {
+            font-size: 0.99em;
+            padding: 0;
+            white-space: normal;
+        }
+        .circle-btn span {
+            font-size: 0.98em;
+            font-weight: 500;
+            word-break: break-all;
+            max-width: 70px;
+            text-align: center;
+            line-height: 1.1em;
+            margin: 0 auto;
+            display: block;
+        }
+        .circle-btn i {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+        /* 欢迎卡片紧凑化 */
+        .dashboard-card {
+            padding: 22px 28px 18px 28px !important;
+            margin-top: 40px !important;
+            max-width: 500px;
+        }
+        .dashboard-card h1 {
+            font-size: 2.2em;
+            margin-bottom: 8px;
+        }
+        .dashboard-card p {
+            font-size: 1.08em;
+            margin-bottom: 10px;
+        }
+        .logout-btn {
+            margin-top: 14px;
+        }
+        /* 按钮区调整间距 */
+        .input-modes {
+            margin: 38px 0 24px 0 !important;
+        }
+        @media (max-width: 700px) {
+            .dashboard-card { padding: 10px 4vw !important; }
+        }
+    </style>
 </head>
 <body>
 <div class="container">
     <div class="dashboard-card">
         <h1>Welcome, {{ username }}!</h1>
-        <p>This is your Nutrition Dashboard.<br>
-            Here you'll be able to upload food images and get AI nutrition analysis.</p>
+        <p>Your nutrition dashboard. Upload food images or use voice/camera for instant AI analysis.</p>
         <a href="{{ url_for('logout') }}" class="logout-btn">Log Out</a>
     </div>
 
     <!-- 三按钮上传区 -->
-    <div class="input-modes" style="display: flex; gap: 32px; justify-content: center; margin: 40px 0 30px 0;">
-        <button class="input-btn" id="voice-btn" title="Voice Input"
+    <div class="input-modes">
+        <button class="input-btn" title="Voice Input"
                 onclick='window.location.href="{{ url_for("voice_input") }}"'>
             <i class="fa-solid fa-microphone"></i>
             <span>Voice</span>
         </button>
-        <button class="input-btn" id="gallery-btn" title="Gallery"
+        <button class="input-btn" title="Gallery"
                 onclick='window.location.href="{{ url_for("upload_food") }}"'>
             <i class="fa-solid fa-image"></i>
             <span>Gallery</span>
         </button>
-        <button class="input-btn" id="camera-btn" title="Camera"
+        <button class="input-btn" title="Camera"
                 onclick='window.location.href="{{ url_for("camera_upload") }}"'>
             <i class="fa-solid fa-camera"></i>
             <span>Camera</span>
         </button>
     </div>
-    <!-- My Nutrition 按钮，风格一致，放底部居中 -->
-    <div style="display: flex; justify-content: center; margin-top: 40px;">
-        <button class="input-btn" id="nutrition-btn" title="My Nutrition"
-                onclick='window.location.href="{{ url_for("history") }}"'>
+
+    <!-- 圆形按钮区 -->
+    <div style="display: flex; gap: 38px; justify-content: center; margin-top: 35px;">
+        <button class="input-btn circle-btn" onclick="window.location.href='{{ url_for('history') }}'">
             <i class="fa-solid fa-apple-whole"></i>
             <span>My Nutrition</span>
         </button>
+        <button class="input-btn circle-btn profile" onclick="window.location.href='{{ url_for('profile') }}'">
+            <i class="fa-solid fa-user"></i>
+            <span>My Profile</span>
+        </button>
     </div>
 
-
+</div>
 </body>
 </html>

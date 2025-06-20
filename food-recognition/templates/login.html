@@ -5,11 +5,17 @@
     <title>{% if show_register %}Register{% else %}Login{% endif %} - Nutrition App</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { background: #181a20; color: #fff; font-family: 'Segoe UI', Arial, sans-serif; }
+        body {
+            background: #181a20;
+            color: #fff;
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }
         .auth-box { max-width: 400px; margin: 5% auto; background: #22232b; border-radius: 18px; box-shadow: 0 6px 24px #0008; padding: 32px; }
         h2 { text-align: center; margin-bottom: 22px; font-size: 2em; letter-spacing: 2px; }
         label { display: block; margin: 18px 0 5px; }
-        input[type=text], input[type=password] { width: 100%; padding: 12px; border-radius: 8px; border: none; background: #191c22; color: #fff; font-size: 1em; }
+        input[type=text], input[type=password], input[type=number], select {
+            width: 100%; padding: 12px; border-radius: 8px; border: none; background: #191c22; color: #fff; font-size: 1em;
+        }
         button { width: 100%; margin: 18px 0; padding: 12px; border: none; border-radius: 8px; background: #4f8cff; color: #fff; font-size: 1.1em; font-weight: bold; transition: background .2s; cursor: pointer; }
         button:hover { background: #1d4db6; }
         .toggle { text-align: center; margin-top: 10px; }
@@ -19,32 +25,82 @@
         .flash-danger { background: #ff2343cc; color: #fff; }
         .flash-warning { background: #ffe066; color: #222; }
         .flash-info { background: #4f8cff; color: #fff; }
+        .tip { text-align: center; color: #72c6ff; margin-top: 20px; font-size: 1em; }
     </style>
+    <script>
+        var isRegister = {{ 'true' if show_register else 'false' }};
+        function validateRegisterForm(e) {
+            if (!isRegister) return true;
+            var form = document.querySelector('form');
+            var gender = form.gender.value;
+            var age = form.age.value;
+            var height = form.height.value;
+            var weight = form.weight.value;
+            var msg = "";
+            if (!gender) msg += "Please select your gender.\n";
+            if (!age || isNaN(age) || age < 1 || age > 120) msg += "Please enter a valid age (1-120).\n";
+            if (!height || isNaN(height) || height < 50 || height > 250) msg += "Please enter a valid height (50-250 cm).\n";
+            if (!weight || isNaN(weight) || weight < 10 || weight > 300) msg += "Please enter a valid weight (10-300 kg).\n";
+            if (msg) {
+                alert(msg);
+                e.preventDefault();
+                return false;
+            }
+            return true;
+        }
+        window.addEventListener('DOMContentLoaded', function () {
+            var form = document.querySelector('form');
+            form.addEventListener('submit', validateRegisterForm);
+        });
+    </script>
 </head>
 <body>
-    <div class="auth-box">
-        <h2>{% if show_register %}Register{% else %}Login{% endif %}</h2>
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-              <div class="flash flash-{{ category }}">{{ message }}</div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
-        <form method="POST" action="{% if show_register %}{{ url_for('register') }}{% else %}{{ url_for('login') }}{% endif %}">
-            <label for="username">Username:</label>
-            <input type="text" name="username" required>
-            <label for="password">Password:</label>
-            <input type="password" name="password" required>
-            <button type="submit">{% if show_register %}Register{% else %}Login{% endif %}</button>
-        </form>
-        <div class="toggle">
-            {% if show_register %}
-                Already have an account? <a href="{{ url_for('login') }}">Login</a>
-            {% else %}
-                New user? <a href="{{ url_for('register') }}">Register</a>
-            {% endif %}
-        </div>
+<div class="auth-box">
+    <h2>{% if show_register %}Register{% else %}Login{% endif %}</h2>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="flash flash-{{ category }}">{{ message }}</div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+    <form method="POST"
+          action="{% if show_register %}{{ url_for('register') }}{% else %}{{ url_for('login') }}{% endif %}">
+        <label for="username">Username:</label>
+        <input type="text" name="username" required>
+        <label for="password">Password:</label>
+        <input type="password" name="password" required>
+        {% if show_register %}
+        <label for="gender">Gender:</label>
+        <select name="gender" required>
+            <option value="">Select gender</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="other">Other</option>
+        </select>
+        <label for="age">Age:</label>
+        <input type="number" name="age" min="1" max="120" placeholder="Enter your age" required>
+        <label for="height">Height (cm):</label>
+        <input type="number" name="height" min="50" max="250" step="0.1" placeholder="Enter your height" required>
+        <label for="weight">Weight (kg):</label>
+        <input type="number" name="weight" min="10" max="300" step="0.1" placeholder="Enter your weight" required>
+        {% endif %}
+        <button type="submit">{% if show_register %}Register{% else %}Login{% endif %}</button>
+    </form>
+    <div class="toggle">
+        {% if show_register %}
+        Already have an account? <a href="{{ url_for('login') }}">Login</a>
+        {% else %}
+        New user? <a href="{{ url_for('register') }}">Register</a>
+        {% endif %}
     </div>
+    {% if show_register %}
+    <div class="tip">
+        <span>
+            After registering, head to <b>My Profile</b> to personalize your nutrition settings and preferences.
+        </span>
+    </div>
+    {% endif %}
+</div>
 </body>
 </html>

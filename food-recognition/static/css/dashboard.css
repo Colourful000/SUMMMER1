@@ -102,3 +102,28 @@ body {
     .input-btn i { font-size: 1.26rem; }
     .input-btn span { font-size: 0.8rem; }
 }
+
+.circle-btn {
+    border-radius: 50%;
+    width: 90px;
+    height: 90px;
+    background: linear-gradient(135deg, #4f8cff 60%, #83e0ff 100%);
+    box-shadow: 0 4px 18px #173f8a40;
+    font-size: 1.09em;
+    font-weight: bold;
+    transition: background 0.19s, transform 0.11s;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.circle-btn:active, .circle-btn:focus {
+    background: linear-gradient(135deg,#2563eb 10%,#4f8cff 100%);
+    transform: scale(0.96);
+}
+.circle-btn.profile {
+    background: linear-gradient(135deg,#4267b2 60%,#83b8ff 100%);
+}
+.circle-btn i { font-size: 2.1em; margin-bottom: 7px; }
+.circle-btn span { font-size: 0.98em; font-weight: 500; }

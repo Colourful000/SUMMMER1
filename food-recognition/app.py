@@ -59,7 +59,8 @@ def create_app():
         if 'user_id' not in session:
             flash('Please log in first!')
             return redirect(url_for('login'))
-        return render_template('dashboard.html', username=session.get('username'))
+        user = User.query.get(session['user_id'])
+        return render_template('dashboard.html', username=session.get('username'), user=user)
 
     # -------- 用户注册 --------
     @app.route('/register', methods=['GET', 'POST'])
@@ -67,16 +68,27 @@ def create_app():
         if request.method == 'POST':
             username = request.form['username']
             password = request.form['password']
+            gender = request.form.get('gender')
+            age = request.form.get('age')
+            height = request.form.get('height')
+            weight = request.form.get('weight')
             if User.query.filter_by(username=username).first():
-                flash('Username already exists', 'danger')  # ← 这里
+                flash('Username already exists', 'danger')
                 return redirect(url_for('register'))
             hashed_password = generate_password_hash(password)
-            new_user = User(username=username, password=hashed_password)
+            new_user = User(
+                username=username,
+                password=hashed_password,
+                gender=gender,
+                age=int(age) if age else None,
+                height=float(height) if height else None,
+                weight=float(weight) if weight else None
+            )
             db.session.add(new_user)
             db.session.commit()
             session['user_id'] = new_user.id
             session['username'] = new_user.username
-            flash('Registration successful! You are now logged in.', 'success')  # ← 这里
+            flash('Registration successful! You are now logged in.', 'success')
             return redirect(url_for('dashboard'))
         return render_template('login.html', show_register=True)
 
@@ -101,7 +113,7 @@ def create_app():
             out_name, output_path, output_type, result_dict = process_image_file(
                 filename,
                 filepath,
-                "yolov8s",  # 小写且 weight_urls 里有的名字
+                "yolov8s",
                 False,  # tta
                 False,  # ensemble
                 0.15,  # min_conf
@@ -110,49 +122,65 @@ def create_app():
                 False  # segmentation
             )
 
-            # 3. 读取csv结果（你如果后面不再需要csv，可以直接用 result_dict 解析食物和营养成分）
+            # 3. 读取csv结果（兜底）
             _, csv_name1, csv_name2 = process_output_file(output_path)
 
-            # -------- 推荐直接从 result_dict 提取（最高置信度的食物和营养），这样不依赖 csv ----------
-            # 假如 result_dict 结构是 {'names': [...], 'scores': [...], ...}
-            # 选置信度最高的
+            # 4. 提取食物和营养
             if result_dict and 'names' in result_dict and 'scores' in result_dict:
-                print("result_dict.keys():", result_dict.keys())
                 idx = int(np.argmax(result_dict['scores']))
                 food_name = result_dict['names'][idx]
-                print("Predicted food_name:", food_name)
                 nutrients = {}
                 for k in ['calories', 'protein', 'fat', 'carbs', 'fiber']:
                     if k in result_dict:
-                        print(k, ":", result_dict[k])
                         try:
                             nutrients[k] = result_dict[k][idx]
-                        except Exception as e:
-                            print(f"Error for {k}:", e)
+                        except Exception:
                             nutrients[k] = None
                     else:
                         nutrients[k] = None
-
-                # ⭐ 在这里加：如果全部为None就查csv库兜底
                 if all(v is None for v in nutrients.values()):
                     nutrients = get_nutrient_from_db(food_name)
-
             else:
-                # 保底还是按 csv 方式
                 food_name, nutrients = extract_food_and_nutrients(csv_name1)
 
-            # 4. 调用 LLM
-            data = {"food": food_name, "nutrients": nutrients, "user_info": session.get('username', '')}
+            # 5. 加入用户个性化资料（关键！）
+            user_info = {}
+            meal_type = request.form.get('tag')
+            if 'user_id' in session:
+                user = User.query.get(session['user_id'])
+                if user:
+                    user_info = {
+                        "gender": user.gender,
+                        "age": user.age,
+                        "height": user.height,
+                        "weight": user.weight,
+                        "diet_goal": user.diet_goal,
+                        "special_diet": user.special_diet,
+                        "activity_level": user.activity_level
+                    }
+
+            # 提取“餐次标签”
+            tag = request.form.get('tag')
+
+            # 6. 调用 LLM，传入餐次
+            data = {"food": food_name, "nutrients": nutrients, "user_info": user_info, "meal_type": meal_type}
+            system_prompt = (
+                "You are a board-certified nutritionist. "
+                "The nutrient data provided is **per 100g serving**. "
+                "If the food choice is strongly misaligned with the user's goal or dietary guidelines, do not artificially highlight minor positives—be strict and direct in your assessment."
+                "Give a concise, highly personalized analysis based on the user's profile (age, gender, height, weight in kg, diet goal, special diet, activity level) and the meal type (e.g. breakfast, lunch, snack, late night). "
+                "Clearly explain potential health impacts, risks, and actionable dietary advice relevant to the user's goals. "
+                "Do NOT use quotation marks or code blocks. "
+                "All output must be clear, well-structured professional English, about 120 words."
+            )
+
             prompt = build_prompt(data)
             ai_advice = ""
             try:
                 response = client.chat.completions.create(
                     model="deepseek-chat",
                     messages=[
-                        {"role": "system", "content":  "You are a professional nutritionist. "
-                                                       "Please give concise, practical advice in English only, no more than 3 short sentences. "
-                                                       "Do not provide lengthy analysis or redundant explanations."
-                         },
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
                     stream=False
@@ -161,13 +189,8 @@ def create_app():
             except Exception as e:
                 ai_advice = f"AI analysis failed: {e}"
 
-            from backend.models import AnalysisHistory  # 确保已经导入
-            import json  # 用于转化 nutrients 为字符串
-
-            # Read checkbox input from the form
+            # 7. 保存历史记录（如用户选择保存）
             save_history = request.form.get('save_history') == 'true'
-
-            # Save to database if checkbox is checked
             if save_history and 'user_id' in session:
                 tag = request.form.get('tag')
                 history = AnalysisHistory(
@@ -175,7 +198,7 @@ def create_app():
                     food_name=food_name,
                     nutrients=json.dumps(nutrients),
                     ai_advice=ai_advice,
-                    tag = tag
+                    tag=tag
                 )
                 db.session.add(history)
                 db.session.commit()
@@ -243,9 +266,9 @@ def create_app():
             save_history = request.form.get('save_history') == 'true'
             tag = request.form.get('tag', None)
 
-            # --- 用你的自定义营养库查 ---
+            # --- 查询营养库 ---
             import pandas as pd
-            csv_file = 'nutrition_db.csv'  # 换成你的实际路径
+            csv_file = 'nutrition_db.csv'  # 改成你的实际路径
             nutrients = {k: None for k in ['calories', 'protein', 'fat', 'carbs', 'fiber']}
             try:
                 df = pd.read_csv(csv_file)
@@ -263,18 +286,41 @@ def create_app():
                 print('CSV 查找异常:', e)
                 # nutrients 仍为 None
 
-            # --- 后续 AI 分析等都不变 ---
-            data = {"food": food_text, "nutrients": nutrients, "user_info": session.get('username', '')}
+            # --- 加入用户个性化资料 ---
+            user_info = {}
+            meal_type = request.form.get('tag')
+            if 'user_id' in session:
+                user = User.query.get(session['user_id'])
+                if user:
+                    user_info = {
+                        "gender": user.gender,
+                        "age": user.age,
+                        "height": user.height,
+                        "weight": user.weight,
+                        "diet_goal": user.diet_goal,
+                        "special_diet": user.special_diet,
+                        "activity_level": user.activity_level
+                    }
+
+            # --- AI 分析 ---
+            data = {"food": food_name, "nutrients": nutrients, "user_info": user_info, "meal_type": meal_type}
+            system_prompt = (
+                "You are a board-certified nutritionist. "
+                "The nutrient data provided is **per 100g serving**. "
+                "If the food choice is strongly misaligned with the user's goal or dietary guidelines, do not artificially highlight minor positives—be strict and direct in your assessment."
+                "Give a concise, highly personalized analysis based on the user's profile (age, gender, height, weight in kg, diet goal, special diet, activity level) and the meal type (e.g. breakfast, lunch, snack, late night). "
+                "Clearly explain potential health impacts, risks, and actionable dietary advice relevant to the user's goals. "
+                "Do NOT use quotation marks or code blocks. "
+                "All output must be clear, well-structured professional English, about 120 words."
+            )
+
             prompt = build_prompt(data)
             ai_advice = ""
             try:
                 response = client.chat.completions.create(
-                    model="deepseek-chat",
+                    model="deepseek-reasoner",
                     messages=[
-                        {"role": "system", "content": "You are a professional nutritionist. "
-                                                      "Please give concise, practical advice in English only, no more than 3 short sentences. "
-                                                      "Do not provide lengthy analysis or redundant explanations."
-                         },
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
                     stream=False
@@ -283,7 +329,7 @@ def create_app():
             except Exception as e:
                 ai_advice = f"AI analysis failed: {e}"
 
-            # 保存历史
+            # --- 保存历史记录 ---
             import json
             if save_history and 'user_id' in session:
                 history = AnalysisHistory(
@@ -315,6 +361,27 @@ def create_app():
     def index():
         print("=== Root / visited, should redirect to /login ===")
         return redirect(url_for('login'))
+
+    @app.route('/profile', methods=['GET', 'POST'])
+    def profile():
+        if 'user_id' not in session:
+            flash('Please log in first!')
+            return redirect(url_for('login'))
+        user = User.query.get(session['user_id'])
+        if request.method == 'POST':
+            # 获取表单内容并保存
+            user.gender = request.form.get('gender')
+            user.age = request.form.get('age')
+            user.height = request.form.get('height')
+            user.weight = request.form.get('weight')
+            user.diet_goal = request.form.get('diet_goal')
+            user.special_diet = request.form.get('special_diet')
+            user.activity_level = request.form.get('activity_level')
+            # 头像上传后端后续补充
+            db.session.commit()
+            flash('Profile updated successfully!', 'success')
+            return redirect(url_for('dashboard'))
+        return render_template('profile.html', user=user)
 
     return app
 

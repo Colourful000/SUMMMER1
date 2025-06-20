@@ -11,25 +11,27 @@ client = OpenAI(
 )
 
 def build_prompt(data):
-    food = data.get('food', '未知食物')
+    food = data.get('food', 'Unknown food')
     nutrients = data.get('nutrients', {})
     user_info = data.get('user_info', {})
-    s = f"请分析如下食物的营养成分，并根据用户目标给出简明建议。\n"
-    s += f"食物：{food}\n"
-    s += f"营养成分：\n"
+    meal_type = data.get('meal_type', None)
+    s = f"The following nutrition data is per 100g.\n"
+    s += f"Food: {food}\n"
+    s += f"Nutrients:\n"
     for k, v in nutrients.items():
         s += f"{k}: {v}\n"
-    if user_info:
-        s += f"用户信息：{user_info}\n"
-    else:
-        s += "用户信息：无\n"
-    s += "分析和建议："
+    if user_info and isinstance(user_info, dict):
+        s += "User profile:\n"
+        for k, v in user_info.items():
+            if v:
+                s += f"{k}: {v}\n"
+    if meal_type:
+        s += f"Meal type: {meal_type}\n"
+    s += "Please provide your expert analysis and advice."
     return s
 
+
 def set_routes(app):
-
-
-
 
 
     @app.route('/analyze', methods=['POST', 'GET'])

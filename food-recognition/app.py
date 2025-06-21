@@ -10,7 +10,8 @@ from backend.constants import UPLOAD_FOLDER, CSV_FOLDER, DETECTION_FOLDER, SEGME
 from backend.models import db, User
 from werkzeug.security import generate_password_hash, check_password_hash
 from backend.models import AnalysisHistory
-from flask import Flask, render_template, request, redirect, url_for, flash, session,jsonify, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, flash, session,jsonify, redirect, url_for,send_from_directory
+
 from backend.routes import build_prompt
 from openai import OpenAI
 from backend.utils import *
@@ -35,6 +36,11 @@ def create_app():
 
     set_routes(app)
 
+    @app.route('/svg_static/<path:filename>')
+    def svg_static(filename):
+        if filename.endswith('.svg'):
+            return send_from_directory('static/assets/login', filename, mimetype='image/svg+xml')
+        return send_from_directory('static/assets/login', filename)
     # -------- 用户登录 --------
     @app.route('/login', methods=['GET', 'POST'])
     def login():

@@ -11,7 +11,7 @@ from backend.models import db, User
 from werkzeug.security import generate_password_hash, check_password_hash
 from backend.models import AnalysisHistory
 from flask import Flask, render_template, request, redirect, url_for, flash, session,jsonify, redirect, url_for,send_from_directory
-
+from datetime import datetime, timedelta
 from backend.routes import build_prompt
 from openai import OpenAI
 from backend.utils import *
@@ -309,7 +309,7 @@ def create_app():
                     }
 
             # --- AI 分析 ---
-            data = {"food": food_name, "nutrients": nutrients, "user_info": user_info, "meal_type": meal_type}
+            data = {"food": food_text, "nutrients": nutrients, "user_info": user_info, "meal_type": meal_type}
             system_prompt = (
                 "You are a board-certified nutritionist. "
                 "The nutrient data provided is **per 100g serving**. "
@@ -388,6 +388,142 @@ def create_app():
             flash('Profile updated successfully!', 'success')
             return redirect(url_for('dashboard'))
         return render_template('profile.html', user=user)
+
+    from datetime import datetime, timedelta
+
+    # 选择日期页面
+    @app.route('/dietician_select', methods=['GET'])
+    def dietician_select():
+        if 'user_id' not in session:
+            flash('Please log in first!')
+            return redirect(url_for('login'))
+        return render_template('dietician_select.html')
+
+    # 结果分析页面
+    from flask import request, render_template, flash, redirect, url_for, session
+    from datetime import datetime, timedelta
+    import json
+
+    @app.route('/dietician_result', methods=['GET', 'POST'])
+    def dietician_result():
+        if 'user_id' not in session:
+            flash('Please log in first!')
+            return redirect(url_for('login'))
+
+        # 支持GET和POST参数，方便页面回跳
+        start_date = request.form.get('start_date') or request.args.get('start_date')
+        end_date = request.form.get('end_date') or request.args.get('end_date')
+        user_message = request.form.get('user_message', '').strip() if request.method == 'POST' else ''
+
+        # 日期解析
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d")
+            end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)  # 包含结束当天
+        except Exception:
+            flash('Invalid date.')
+            return redirect(url_for('dietician_select'))
+
+        # 查询历史
+        history = AnalysisHistory.query.filter(
+            AnalysisHistory.user_id == session['user_id'],
+            AnalysisHistory.timestamp >= start,
+            AnalysisHistory.timestamp < end
+        ).order_by(AnalysisHistory.timestamp.asc()).all()
+
+        history_summaries = []
+        for record in history:
+            try:
+                nutrients = json.loads(record.nutrients)
+            except Exception:
+                nutrients = {}
+            history_summaries.append({
+                "food": record.food_name,
+                "nutrients": nutrients,
+                "tag": record.tag,
+                "ai_advice": record.ai_advice
+            })
+
+        # 构建基础营养历史上下文
+        base_context = (
+            "Here are the user's nutrition records for the selected dates:\n"
+        )
+        for h in history_summaries:
+            base_context += f"Food: {h['food']}, Tag: {h['tag']}, Nutrients: {h['nutrients']}, Previous AI Advice: {h['ai_advice']}\n"
+
+        # 统一AI风格的system prompt
+        system_prompt = (
+            "You are a warm, conversational, board-certified dietician. "
+            "When you answer, you must only provide nutrition advice, never discuss anything else. "
+            "You always consider the user's historical nutrition records provided below when answering. "
+            "Never use any lists, bullets, or special formatting. Speak in a friendly, conversational tone. "
+            "Never use dashes, hyphens, quotes, or any kind of list or numbered format. "
+            "Respond only with full sentences, like you’re chatting face to face. "
+            "Summarize what stands out, what concerns you, and what to change, but speak in a natural, supportive, flowing paragraph. "
+            "Maximum 180 words."
+        )
+
+        ai_summary = ""
+        ai_reply = None
+
+        # 首次打开或刷新，仅给分析总结
+        if request.method == 'GET' or not user_message:
+            if history_summaries:
+                summary_prompt = (
+                        base_context +
+                        "Please review these records and give the user a natural, spoken-style summary of their nutrition, pointing out main strengths and improvements, without using any lists or formatting."
+                )
+                try:
+                    response = client.chat.completions.create(
+                        model="deepseek-reasoner",
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": summary_prompt}
+                        ]
+                    )
+                    ai_summary = response.choices[0].message.content
+                except Exception as e:
+                    ai_summary = f"AI summary failed: {e}"
+            else:
+                ai_summary = "No nutrition history found for the selected date range."
+            # 首次不显示对话内容
+            return render_template(
+                'dietician_result.html',
+                summary=ai_summary,
+                start_date=start_date,
+                end_date=end_date,
+                user_message=None,
+                ai_reply=None
+            )
+
+        # 用户提交提问
+        else:
+            chat_prompt = (
+                    base_context +
+                    f"\nUser's question: {user_message}\n"
+                    "Please answer only as a nutritionist, referencing the user's nutrition history above. "
+                    "Never discuss anything outside of nutrition. Speak like a person, in normal sentences, not in lists or points."
+                    "Maximum 30 words."
+            )
+            try:
+                response = client.chat.completions.create(
+                    model="deepseek-reasoner",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": chat_prompt}
+                    ]
+                )
+                ai_reply = response.choices[0].message.content
+            except Exception as e:
+                ai_reply = f"AI reply failed: {e}"
+
+            return render_template(
+                'dietician_result.html',
+                summary=None,  # 提问时不重复summary
+                start_date=start_date,
+                end_date=end_date,
+                user_message=user_message,
+                ai_reply=ai_reply
+            )
 
     return app
 

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dietician Analysis Result</title>
+    <style>
+        body { background: #181b28; color: #fff; font-family: 'Segoe UI', Arial, sans-serif; }
+        .result-box { max-width: 520px; margin: 60px auto; background: #23263a; border-radius: 18px; padding: 38px 28px; }
+        .summary { background: #25274d; border-radius: 10px; padding: 24px 18px; margin-top: 20px; }
+        .chat-area { margin-top: 35px; }
+        .chat-area textarea { width: 99%; border-radius:10px; padding:10px; }
+        .chat-area button { margin-top:12px; background:#5691fc; color:#fff; border:none; border-radius:8px; padding:9px 30px; font-size:1em; cursor:pointer; }
+        .user-msg, .ai-reply { margin-top:12px; }
+        .ai-reply { background:#2d3660; padding:15px; border-radius:10px; }
+    </style>
+</head>
+<body>
+<div class="result-box">
+    <h2>Dietician's Analysis</h2>
+    <div>Date: {{ start_date }} ~ {{ end_date }}</div>
+    {% if summary %}
+        <div class="summary">{{ summary }}</div>
+    {% endif %}
+
+    <div class="chat-area">
+        <h3 style="margin-top:24px;">Ask Your Dietician</h3>
+        <form method="post" action="{{ url_for('dietician_result') }}">
+            <input type="hidden" name="start_date" value="{{ start_date }}">
+            <input type="hidden" name="end_date" value="{{ end_date }}">
+            <textarea name="user_message" rows="3" placeholder="Type your nutrition question here..." required></textarea>
+            <br>
+            <button type="submit">Ask</button>
+        </form>
+        {% if user_message %}
+            <div class="user-msg"><b>You:</b> {{ user_message }}</div>
+        {% endif %}
+        {% if ai_reply %}
+            <div class="ai-reply"><b>Dietician:</b> {{ ai_reply }}</div>
+        {% endif %}
+    </div>
+    <div style="margin-top:30px;">
+        <a href="{{ url_for('dietician_select') }}" style="color:#83d1ff;">Back to Date Selection</a>
+    </div>
+</div>
+</body>
+</html>

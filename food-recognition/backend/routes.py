@@ -10,24 +10,32 @@ client = OpenAI(
     base_url="https://api.deepseek.com"
 )
 
+# 在 backend/routes.py 文件中
 def build_prompt(data):
     food = data.get('food', 'Unknown food')
     nutrients = data.get('nutrients', {})
     user_info = data.get('user_info', {})
     meal_type = data.get('meal_type', None)
-    s = f"The following nutrition data is per 100g.\n"
-    s += f"Food: {food}\n"
-    s += f"Nutrients:\n"
+    estimated_weight = data.get('estimated_weight')
+    estimation_method = data.get('estimation_method')
+
+    s = f"The following nutritional information is based on total weight. The estimated total weight of this food is {estimated_weight}grams。\n"
+    s += f"This weight was determined using the following method.: {estimation_method}。\n\n"
+    s += f"Food name: {food}\n"
+    s += f"Total nutritional content of this food:\n"
     for k, v in nutrients.items():
-        s += f"{k}: {v}\n"
+        if isinstance(v, (int, float)):
+            s += f"- {k.capitalize()}: {v:.2f}\n"
+        else:
+            s += f"- {k.capitalize()}: {v}\n"
     if user_info and isinstance(user_info, dict):
-        s += "User profile:\n"
+        s += "\nUser profile:\n"
         for k, v in user_info.items():
             if v:
-                s += f"{k}: {v}\n"
+                s += f"- {k.replace('_', ' ').capitalize()}: {v}\n"
     if meal_type:
-        s += f"Meal type: {meal_type}\n"
-    s += "Please provide your expert analysis and advice."
+        s += f"\nMeal type: {meal_type}\n"
+    s += "\nPlease provide your expert analysis and recommendations based on all of the above information."
     return s
 
 

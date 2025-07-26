@@ -17,11 +17,11 @@ from openai import OpenAI
 from backend.utils import *
 import whisper
 import json
+import pandas as pd
+import google.generativeai as genai
+NUTRITION_DF = pd.read_csv('nutrition_db.csv')
 
-client = OpenAI(
-    api_key="sk-58530a01a7a94d66a92c010a8a86f0a9",
-    base_url="https://api.deepseek.com"
-)
+
 def create_app():
     app = Flask(__name__, template_folder='templates', static_folder='static')
     app.config['SECRET_KEY'] = 'sk-58530a01a7a94d66a92c010a8a86f0a9'  # 换成你自己的
@@ -36,6 +36,79 @@ def create_app():
 
     set_routes(app)
 
+    # ==============================================================================
+    # ======================== 新增：重量估算核心逻辑 ============================
+    # ==============================================================================
+    # 在 app.py 中，替换旧的 estimate_food_weight 函数
+    # 在 app.py 中, 放在 create_app() 前面
+    # (确保 os, json, PIL, google.generativeai 的 import 都在)
+
+    # --- 安全地配置API密钥 ---
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("错误：请先设置 GOOGLE_API_KEY 环境变量！")
+    genai.configure(api_key=api_key)
+
+    client = OpenAI(
+        api_key=os.getenv("DEEPSEEK_API_KEY") or "sk-58530a01a7a94d66a92c010a8a86f0a9",  # 推荐用环境变量
+        base_url="https://api.deepseek.com"
+    )
+
+    def estimate_weight_with_gemini(image_path: str):
+        """
+        【英文版】使用Gemini API来估算图片中食物的重量。
+        这个版本会用英文进行推理。
+        """
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        # --- 指令已修改为英文 ---
+        prompt = """
+        You are a top-tier nutritionist skilled in visual weight estimation.
+        Please analyze the image I provide and estimate the weight of the main food item in grams.
+
+        Your thinking process should be as follows:
+        1. Identify the main food item in the image.
+        2. Look for common reference objects in the image (e.g., fork, spoon, plate, hand, cup).
+        3. If you find a reference object, state what it is and its standard size (e.g., a standard dinner fork is about 19 cm long).
+        4. Based on the reference object, estimate the food's dimensions and volume.
+        5. Combining the food type and its typical density, calculate the final weight.
+        6. If you cannot find any reference objects, provide a reasonable average weight based on the food type and common portion sizes.
+
+        Finally, please return your analysis strictly in the following JSON format, without any extra explanatory text or markdown like "```json" or "```":
+        {
+          "food_name": "Name of the food",
+          "estimated_weight_g": your estimated weight value (return numbers only),
+          "reasoning": "Your brief reasoning process (e.g., 'Estimated using a fork as a reference.')"
+        }
+        """
+        try:
+            print("--- 开始调用Gemini API ---")
+            img = Image.open(image_path)
+
+            response = model.generate_content([prompt, img])
+
+            # <<< 关键的调试步骤 >>>
+            print("\n--- 已收到Gemini的原始回复 (下方是完整内容) ---")
+            print(response.text)
+            print("--- 原始回复结束 ---\n")
+
+            # 尝试清理并解析JSON
+            cleaned_text = response.text.strip()
+            if cleaned_text.startswith("```json"):
+                cleaned_text = cleaned_text[7:]
+            if cleaned_text.endswith("```"):
+                cleaned_text = cleaned_text[:-3]
+
+            print("--- 正在尝试解析清理后的文本 ---")
+            result_json = json.loads(cleaned_text)
+            print("--- JSON解析成功！ ---")
+            return result_json
+
+        except Exception as e:
+            print(f"\n--- 处理过程中发生错误 ---")
+            print(f"错误类型: {type(e).__name__}")
+            print(f"错误信息: {e}")
+            print("------------------------\n")
+            return None
     @app.route('/svg_static/<path:filename>')
     def svg_static(filename):
         if filename.endswith('.svg'):
@@ -112,30 +185,20 @@ def create_app():
                 flash('No file uploaded')
                 return redirect(url_for('upload_food'))
 
-            # 1. 保存上传
+            # 1. Save the uploaded file
             filename, filepath, filetype = process_upload_file(request)
 
-            # 2. 检测（多返回 result_dict）
+            # 2. Run YOLO detection to get food name and (possibly) nutrition
             out_name, output_path, output_type, result_dict = process_image_file(
-                filename,
-                filepath,
-                "yolov8s",
-                False,  # tta
-                False,  # ensemble
-                0.15,  # min_conf
-                0.5,  # min_iou
-                False,  # enhanced
-                False  # segmentation
+                filename, filepath, "yolov8s", False, False, 0.15, 0.5, False, False
             )
 
-            # 3. 读取csv结果（兜底）
-            _, csv_name1, csv_name2 = process_output_file(output_path)
-
-            # 4. 提取食物和营养
-            if result_dict and 'names' in result_dict and 'scores' in result_dict:
-                idx = int(np.argmax(result_dict['scores']))
-                food_name = result_dict['names'][idx]
+            # 3. Get food name from YOLO
+            if result_dict and 'names' in result_dict and result_dict['names']:
+                food_name = result_dict['names'][0]
+                # Try to get nutrition from YOLO result first
                 nutrients = {}
+                idx = 0  # Use first detected item
                 for k in ['calories', 'protein', 'fat', 'carbs', 'fiber']:
                     if k in result_dict:
                         try:
@@ -144,12 +207,30 @@ def create_app():
                             nutrients[k] = None
                     else:
                         nutrients[k] = None
+                # If all values are None, fallback to csv
                 if all(v is None for v in nutrients.values()):
                     nutrients = get_nutrient_from_db(food_name)
             else:
-                food_name, nutrients = extract_food_and_nutrients(csv_name1)
+                food_name = "Unknown"
+                nutrients = {k: None for k in ['calories', 'protein', 'fat', 'carbs', 'fiber']}
 
-            # 5. 加入用户个性化资料（关键！）
+            # 4. Use Gemini ONLY for weight estimation
+            gemini_result = estimate_weight_with_gemini(filepath)
+            if gemini_result:
+                estimated_weight = int(gemini_result.get('estimated_weight_g', 200))
+                estimation_method = gemini_result.get('reasoning', 'AI estimation')
+            else:
+                estimated_weight = 200
+                estimation_method = "Weight estimation by Gemini failed, used default."
+
+            # 5. Scale nutrition to total portion if available
+            if all(v is not None for v in nutrients.values()):
+                scaling_factor = estimated_weight / 100.0
+                final_nutrients = {k: round(v * scaling_factor, 2) for k, v in nutrients.items()}
+            else:
+                final_nutrients = nutrients
+
+            # 6. Prepare data and call LLM for nutrition advice
             user_info = {}
             meal_type = request.form.get('tag')
             if 'user_id' in session:
@@ -165,29 +246,31 @@ def create_app():
                         "activity_level": user.activity_level
                     }
 
-            # 提取“餐次标签”
-            tag = request.form.get('tag')
+            data_for_advice = {
+                "food": food_name,
+                "nutrients": final_nutrients,
+                "user_info": user_info,
+                "meal_type": meal_type,
+                "estimated_weight": estimated_weight,
+                "estimation_method": estimation_method
+            }
 
-            # 6. 调用 LLM，传入餐次
-            data = {"food": food_name, "nutrients": nutrients, "user_info": user_info, "meal_type": meal_type}
             system_prompt = (
-                "You are a board-certified nutritionist. "
-                "The nutrient data provided is **per 100g serving**. "
-                "If the food choice is strongly misaligned with the user's goal or dietary guidelines, do not artificially highlight minor positives—be strict and direct in your assessment."
-                "Give a concise, highly personalized analysis based on the user's profile (age, gender, height, weight in kg, diet goal, special diet, activity level) and the meal type (e.g. breakfast, lunch, snack, late night). "
-                "Clearly explain potential health impacts, risks, and actionable dietary advice relevant to the user's goals. "
-                "Do NOT use quotation marks or code blocks. "
-                "All output must be clear, well-structured professional English, about 120 words."
+                "You are a board-certified nutritionist. Your job is to provide personalized, professional nutrition analysis for the user. "
+                "When responding, you must use only full, natural sentences and never use any bullet points, numbers, dashes, asterisks, or any other formatting symbols. "
+                "Do not use bold, italics, code blocks, or markdown. Your answer should always be a single, flowing paragraph, not separated into sections or lists. "
+                "Never use rhetorical or leading questions. Just give a direct, friendly, and informative nutrition analysis, as if you are talking to the user face to face. "
+                "Your response should be highly relevant, concise, and about 120 words."
             )
 
-            prompt = build_prompt(data)
+            prompt_for_advice = build_prompt(data_for_advice)
             ai_advice = ""
             try:
                 response = client.chat.completions.create(
                     model="deepseek-chat",
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
+                        {"role": "user", "content": prompt_for_advice}
                     ],
                     stream=False
                 )
@@ -195,26 +278,30 @@ def create_app():
             except Exception as e:
                 ai_advice = f"AI analysis failed: {e}"
 
-            # 7. 保存历史记录（如用户选择保存）
+            # 7. Save to history if requested
             save_history = request.form.get('save_history') == 'true'
             if save_history and 'user_id' in session:
                 tag = request.form.get('tag')
                 history = AnalysisHistory(
                     user_id=session['user_id'],
                     food_name=food_name,
-                    nutrients=json.dumps(nutrients),
+                    nutrients=json.dumps(final_nutrients),
                     ai_advice=ai_advice,
                     tag=tag
                 )
                 db.session.add(history)
                 db.session.commit()
 
+            # 8. Render result page
             return render_template(
                 'analyze_result.html',
                 food_name=food_name,
-                nutrients=nutrients,
-                ai_advice=ai_advice
+                nutrients=final_nutrients,
+                ai_advice=ai_advice,
+                estimated_weight=estimated_weight,
+                estimation_method=estimation_method
             )
+
         return render_template('upload_file.html')
 
     @app.route('/history')
@@ -267,18 +354,16 @@ def create_app():
         if 'user_id' not in session:
             flash('Please log in first!')
             return redirect(url_for('login'))
+
         if request.method == 'POST':
             food_text = request.form.get('food_text', '').strip()
             save_history = request.form.get('save_history') == 'true'
             tag = request.form.get('tag', None)
 
-            # --- 查询营养库 ---
-            import pandas as pd
-            csv_file = 'nutrition_db.csv'  # 改成你的实际路径
+            # --- 查询营养库：直接用全局 NUTRITION_DF ---
             nutrients = {k: None for k in ['calories', 'protein', 'fat', 'carbs', 'fiber']}
             try:
-                df = pd.read_csv(csv_file)
-                result = df[df['name'].str.lower().str.contains(food_text.lower())]
+                result = NUTRITION_DF[NUTRITION_DF['name'].str.lower().str.contains(food_text.lower())]
                 if not result.empty:
                     row = result.iloc[0]
                     nutrients = {
@@ -294,7 +379,7 @@ def create_app():
 
             # --- 加入用户个性化资料 ---
             user_info = {}
-            meal_type = request.form.get('tag')
+            meal_type = tag
             if 'user_id' in session:
                 user = User.query.get(session['user_id'])
                 if user:
@@ -309,11 +394,16 @@ def create_app():
                     }
 
             # --- AI 分析 ---
-            data = {"food": food_text, "nutrients": nutrients, "user_info": user_info, "meal_type": meal_type}
+            data = {
+                "food": food_text,
+                "nutrients": nutrients,
+                "user_info": user_info,
+                "meal_type": meal_type
+            }
             system_prompt = (
                 "You are a board-certified nutritionist. "
-                "The nutrient data provided is **per 100g serving**. "
-                "If the food choice is strongly misaligned with the user's goal or dietary guidelines, do not artificially highlight minor positives—be strict and direct in your assessment."
+                "The nutrient data provided is per 100g serving. "
+                "If the food choice is strongly misaligned with the user's goal or dietary guidelines, do not artificially highlight minor positives—be strict and direct in your assessment. "
                 "Give a concise, highly personalized analysis based on the user's profile (age, gender, height, weight in kg, diet goal, special diet, activity level) and the meal type (e.g. breakfast, lunch, snack, late night). "
                 "Clearly explain potential health impacts, risks, and actionable dietary advice relevant to the user's goals. "
                 "Do NOT use quotation marks or code blocks. "
@@ -336,7 +426,6 @@ def create_app():
                 ai_advice = f"AI analysis failed: {e}"
 
             # --- 保存历史记录 ---
-            import json
             if save_history and 'user_id' in session:
                 history = AnalysisHistory(
                     user_id=session['user_id'],

@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>My Profile - Nutrition App</title>
+    <title>{% if show_register %}Register{% else %}Login{% endif %} – Foodlingo</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { background: #181a20; color: #fff; font-family: 'Segoe UI', Arial, sans-serif; }
-        .profile-box { max-width: 420px; margin: 5% auto; background: #22232b; border-radius: 18px; box-shadow: 0 6px 24px #0008; padding: 34px; }
+        .login-box { max-width: 420px; margin: 7% auto; background: #22232b; border-radius: 18px; box-shadow: 0 6px 24px #0008; padding: 34px; }
         h2 { text-align: center; margin-bottom: 22px; font-size: 2em; letter-spacing: 2px; }
         label { display: block; margin: 18px 0 5px; }
         input, select {
@@ -17,11 +17,15 @@
         .btn:hover { background: #1d4db6; }
         .flash { padding: 10px; border-radius: 6px; text-align: center; margin-bottom: 10px; font-weight: bold; }
         .flash-success { background: #29cd7aee; color: #fff; }
+        .flash-danger  { background: #ff2343cc; color: #fff; }
+        .toggle-link { text-align: center; margin-top: 18px; }
+        .toggle-link a { color: #4f8cff; text-decoration: underline; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="profile-box">
-        <h2>My Profile</h2>
+    <div class="login-box">
+        <h2>{% if show_register %}Register{% else %}Login{% endif %}</h2>
+
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
             {% for category, message in messages %}
@@ -29,55 +33,43 @@
             {% endfor %}
           {% endif %}
         {% endwith %}
-        <form method="POST">
-            <label for="gender">Gender:</label>
-            <select name="gender" required>
-                <option value="">Select gender</option>
-                <option value="male" {% if user.gender=='male' %}selected{% endif %}>Male</option>
-                <option value="female" {% if user.gender=='female' %}selected{% endif %}>Female</option>
-                <option value="other" {% if user.gender=='other' %}selected{% endif %}>Other</option>
-            </select>
 
-            <label for="age">Age:</label>
-            <input type="number" name="age" min="1" max="120" value="{{ user.age or '' }}" required>
+        <form method="POST" action="{% if show_register %}{{ url_for('register') }}{% else %}{{ url_for('login') }}{% endif %}">
+            <label for="username">Username:</label>
+            <input type="text" name="username" required autofocus>
 
-            <label for="height">Height (cm):</label>
-            <input type="number" name="height" min="50" max="250" step="0.1" value="{{ user.height or '' }}" required>
+            <label for="password">Password:</label>
+            <input type="password" name="password" required>
 
-            <label for="weight">Weight (kg):</label>
-            <input type="number" name="weight" min="10" max="300" step="0.1" value="{{ user.weight or '' }}" required>
+            {% if show_register %}
+                <label for="gender">Gender:</label>
+                <select name="gender" required>
+                    <option value="">Select gender</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                </select>
 
-            <label for="diet_goal">Diet Goal:</label>
-            <select name="diet_goal" required>
-                <option value="">Select goal</option>
-                <option value="lose_weight" {% if user.diet_goal=='lose_weight' %}selected{% endif %}>Lose weight</option>
-                <option value="build_muscle" {% if user.diet_goal=='build_muscle' %}selected{% endif %}>Build muscle</option>
-                <option value="keep_fit" {% if user.diet_goal=='keep_fit' %}selected{% endif %}>Keep fit</option>
-                <option value="other" {% if user.diet_goal=='other' %}selected{% endif %}>Other</option>
-            </select>
+                <label for="age">Age:</label>
+                <input type="number" name="age" min="1" max="120" required>
 
-            <label for="special_diet">Special Diet (comma separated, e.g. vegetarian, vegan):</label>
-            <input type="text" name="special_diet" value="{{ user.special_diet or '' }}" placeholder="vegetarian, vegan, halal">
+                <label for="height">Height (cm):</label>
+                <input type="number" name="height" min="50" max="250" step="0.1" required>
 
-            <label for="activity_level">Daily Activity Level:</label>
-            <select name="activity_level" required>
-                <option value="">Select activity level</option>
-                <option value="sedentary" {% if user.activity_level=='sedentary' %}selected{% endif %}>Sedentary (little or no exercise)</option>
-                <option value="lightly_active" {% if user.activity_level=='lightly_active' %}selected{% endif %}>Lightly active (light exercise)</option>
-                <option value="moderately_active" {% if user.activity_level=='moderately_active' %}selected{% endif %}>Moderately active (moderate exercise)</option>
-                <option value="very_active" {% if user.activity_level=='very_active' %}selected{% endif %}>Very active (hard exercise)</option>
-            </select>
+                <label for="weight">Weight (kg):</label>
+                <input type="number" name="weight" min="10" max="300" step="0.1" required>
+            {% endif %}
 
-            <!-- 头像部分后续加：现在先预留输入框 -->
-            <label for="avatar_url">Avatar URL (optional):</label>
-            <input type="text" name="avatar_url" value="{{ user.avatar_url or '' }}" placeholder="https://...">
-
-            <button type="submit" class="btn">Save Profile</button>
+            <button type="submit" class="btn">{% if show_register %}Register{% else %}Login{% endif %}</button>
         </form>
-    </div>
 
-<div style="margin-top: 28px; text-align: center;">
-    <a href="{{ url_for('dashboard') }}" style="display:inline-block;padding:10px 28px;border-radius:8px;background:#4f8cff;color:#fff;text-decoration:none;font-weight:bold;">Back to Dashboard</a>
-</div>
+        <div class="toggle-link">
+            {% if show_register %}
+                Already have an account? <a href="{{ url_for('login') }}">Login</a>
+            {% else %}
+                New user? <a href="{{ url_for('register') }}">Register</a>
+            {% endif %}
+        </div>
+    </div>
 </body>
 </html>

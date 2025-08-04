@@ -81,12 +81,18 @@
         label, select, input[type="checkbox"] {
             font-size: 1em;
         }
+        .weight-tips {
+            color: #bbb;
+            font-size: 0.96em;
+            margin-bottom: 8px;
+            margin-top: 2px;
+        }
     </style>
 </head>
 <body>
 <div class="upload-container">
     <h2><i class="fa-solid fa-microphone"></i> Voice Input Food Name</h2>
-    <form id="voice-form" action="{{ url_for('voice_input') }}" method="POST">
+    <form id="voice-form" action="{{ url_for('voice_input') }}" method="POST" autocomplete="off">
         <!-- 语音录入按钮 -->
         <button type="button" class="voice-record-btn" id="voice-record-btn">
             <i class="fa-solid fa-microphone"></i> Press & Hold to Speak
@@ -95,12 +101,25 @@
         <div class="voice-result" id="voice-result"></div>
         <!-- 隐藏的文本域，存识别的食物名 -->
         <input type="hidden" name="food_text" id="food_text" required>
+
+        <!-- 重量输入 -->
+        <label for="weight_input" style="display:block; margin-top: 14px;">
+            Input food weight (g, optional):
+            <input type="number" name="weight_input" id="weight_input" min="1" placeholder="e.g. 200"
+                   style="margin-left: 8px; border-radius: 6px; padding: 2px 8px; width: 100px;">
+        </label>
+        <div class="weight-tips">
+            If left blank, will use <b>200g</b> by default.<br>
+            <span style="font-size:0.96em;">Example: Apple ≈ 180g, Hamburger ≈ 150g, Egg ≈ 55g</span>
+        </div>
+
         <!-- 保存历史 -->
         <label style="display: block; margin-top: 10px;">
             <input type="checkbox" name="save_history" value="true">
             Save this result to <strong>"My Nutrition"</strong>
         </label>
-        <!-- tag selection start -->
+
+        <!-- tag selection -->
         <label for="tag" style="display:block; margin-top: 14px;">
             Select a meal tag:
             <select name="tag" id="tag" required style="margin-left: 8px; border-radius: 6px; padding: 2px 8px;">
@@ -147,7 +166,6 @@ window.onload = function() {
             });
     }
 };
-
 
 voiceBtn.onmousedown = async function(e) {
     if (isRecording) return;

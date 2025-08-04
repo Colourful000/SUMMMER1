@@ -36,12 +36,6 @@ def create_app():
 
     set_routes(app)
 
-    # ==============================================================================
-    # ======================== 新增：重量估算核心逻辑 ============================
-    # ==============================================================================
-    # 在 app.py 中，替换旧的 estimate_food_weight 函数
-    # 在 app.py 中, 放在 create_app() 前面
-    # (确保 os, json, PIL, google.generativeai 的 import 都在)
 
     # --- 安全地配置API密钥 ---
     api_key = os.getenv("GOOGLE_API_KEY")
@@ -50,7 +44,7 @@ def create_app():
     genai.configure(api_key=api_key)
 
     client = OpenAI(
-        api_key=os.getenv("DEEPSEEK_API_KEY") or "sk-58530a01a7a94d66a92c010a8a86f0a9",  # 推荐用环境变量
+        api_key=os.getenv("DEEPSEEK_API_KEY") or "sk-58530a01a7a94d66a92c010a8a86f0a9",
         base_url="https://api.deepseek.com"
     )
 
@@ -356,11 +350,19 @@ def create_app():
             return redirect(url_for('login'))
 
         if request.method == 'POST':
+            # 1. 获取前端数据
             food_text = request.form.get('food_text', '').strip()
             save_history = request.form.get('save_history') == 'true'
             tag = request.form.get('tag', None)
+            estimated_weight = request.form.get('weight_input')
 
-            # --- 查询营养库：直接用全局 NUTRITION_DF ---
+            # 2. 处理重量输入（无则用默认200）
+            try:
+                estimated_weight = int(estimated_weight) if estimated_weight else 200
+            except Exception:
+                estimated_weight = 200
+
+            # 3. 查找营养库
             nutrients = {k: None for k in ['calories', 'protein', 'fat', 'carbs', 'fiber']}
             try:
                 result = NUTRITION_DF[NUTRITION_DF['name'].str.lower().str.contains(food_text.lower())]
@@ -377,7 +379,13 @@ def create_app():
                 print('CSV 查找异常:', e)
                 # nutrients 仍为 None
 
-            # --- 加入用户个性化资料 ---
+            # 4. 按重量换算（所有营养素都有数值时才缩放，否则原样）
+            final_nutrients = nutrients.copy()
+            if all(v is not None for v in nutrients.values()):
+                scaling_factor = estimated_weight / 100.0
+                final_nutrients = {k: round(v * scaling_factor, 2) for k, v in nutrients.items()}
+
+            # 5. 加入用户个性化资料
             user_info = {}
             meal_type = tag
             if 'user_id' in session:
@@ -393,23 +401,22 @@ def create_app():
                         "activity_level": user.activity_level
                     }
 
-            # --- AI 分析 ---
+            # 6. 构造AI分析输入
             data = {
                 "food": food_text,
-                "nutrients": nutrients,
+                "nutrients": final_nutrients,
                 "user_info": user_info,
-                "meal_type": meal_type
+                "meal_type": meal_type,
+                "estimated_weight": estimated_weight,
+                "estimation_method": "Manual input or default"
             }
             system_prompt = (
-                "You are a board-certified nutritionist. "
-                "The nutrient data provided is per 100g serving. "
-                "If the food choice is strongly misaligned with the user's goal or dietary guidelines, do not artificially highlight minor positives—be strict and direct in your assessment. "
-                "Give a concise, highly personalized analysis based on the user's profile (age, gender, height, weight in kg, diet goal, special diet, activity level) and the meal type (e.g. breakfast, lunch, snack, late night). "
-                "Clearly explain potential health impacts, risks, and actionable dietary advice relevant to the user's goals. "
-                "Do NOT use quotation marks or code blocks. "
-                "All output must be clear, well-structured professional English, about 120 words."
+                "You are a board-certified nutritionist. Your job is to provide personalized, professional nutrition analysis for the user. "
+                "When responding, you must use only full, natural sentences and never use any bullet points, numbers, dashes, asterisks, or any other formatting symbols. "
+                "Do not use bold, italics, code blocks, or markdown. Your answer should always be a single, flowing paragraph, not separated into sections or lists. "
+                "Never use rhetorical or leading questions. Just give a direct, friendly, and informative nutrition analysis, as if you are talking to the user face to face. "
+                "Your response should be highly relevant, concise, and about 120 words."
             )
-
             prompt = build_prompt(data)
             ai_advice = ""
             try:
@@ -425,24 +432,28 @@ def create_app():
             except Exception as e:
                 ai_advice = f"AI analysis failed: {e}"
 
-            # --- 保存历史记录 ---
+            # 7. 保存历史
             if save_history and 'user_id' in session:
                 history = AnalysisHistory(
                     user_id=session['user_id'],
                     food_name=food_text,
-                    nutrients=json.dumps(nutrients),
+                    nutrients=json.dumps(final_nutrients),
                     ai_advice=ai_advice,
                     tag=tag
                 )
                 db.session.add(history)
                 db.session.commit()
 
+            # 8. 返回分析结果页面（显示食物、营养素、AI建议、估算重量等）
             return render_template(
                 'analyze_result.html',
                 food_name=food_text,
-                nutrients=nutrients,
-                ai_advice=ai_advice
+                nutrients=final_nutrients,
+                ai_advice=ai_advice,
+                estimated_weight=estimated_weight,
+                estimation_method="Manual input or default"
             )
+        # GET请求，直接渲染语音输入页面
         return render_template('voice_input.html')
 
     @app.route('/camera_upload', methods=['GET'])

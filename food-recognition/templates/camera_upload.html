@@ -83,6 +83,44 @@
             box-shadow: 0 2px 10px #0003;
         }
 
+        /* --- 新增：加载效果的样式 --- */
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(25, 27, 36, 0.85); /* 半透明背景 */
+            display: none; /* 默认隐藏 */
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 9999; /* 确保在最顶层 */
+            backdrop-filter: blur(5px); /* 毛玻璃效果 */
+        }
+
+        .spinner {
+            border: 6px solid #f3f3f333; /* 浅色圆环 */
+            border-top: 6px solid #4f8cff; /* 蓝色加载部分 */
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1.5s linear infinite; /* 旋转动画 */
+        }
+
+        #loading-overlay p {
+            color: #e0e0e0;
+            margin-top: 20px;
+            font-size: 1.2em;
+            letter-spacing: 1px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* --- 样式结束 --- */
+
         @media (max-width: 520px) {
             .upload-container {
                 padding: 18px 4vw;
@@ -91,15 +129,20 @@
     </style>
 </head>
 <body>
+
+<!-- 新增：加载效果的HTML结构 -->
+<div id="loading-overlay">
+    <div class="spinner"></div>
+    <p>Analysing your food, please wait...</p>
+</div>
+
 <div class="upload-container">
     <h2><i class="fa-solid fa-camera"></i> Take Photo</h2>
     <form id="camera-form" action="{{ url_for('upload_food') }}" method="POST" enctype="multipart/form-data">
-        <!-- 只允许拍照 -->
         <label class="custom-file-upload">
             <input type="file" name="file" id="camera-input" accept="image/*" capture="environment" required onchange="previewImage(event)">
             <i class="fa-solid fa-camera"></i> Take Photo
         </label>
-        <!-- 你原有的保存历史记录/标签选择 -->
         <label style="display: block; margin-top: 10px; font-size: 0.95em;">
             <input type="checkbox" name="save_history" value="true">
             Save this result to <strong>"My Nutrition"</strong>
@@ -122,6 +165,7 @@
     </form>
     <a href="{{ url_for('dashboard') }}" class="back-link">← Back to Dashboard</a>
 </div>
+
 <script>
     // 自动弹出摄像头拍照（页面一加载就点）
     window.onload = function() {
@@ -142,5 +186,15 @@
         }
     }
 </script>
+
+<!-- 新增：控制加载效果的JavaScript -->
+<script>
+    const form = document.getElementById('camera-form'); // 注意：ID是 camera-form
+    const loadingOverlay = document.getElementById('loading-overlay');
+    form.addEventListener('submit', function() {
+        loadingOverlay.style.display = 'flex';
+    });
+</script>
+
 </body>
 </html>

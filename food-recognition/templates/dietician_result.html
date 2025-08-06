@@ -3,18 +3,66 @@
 <head>
     <meta charset="UTF-8">
     <title>Dietician Analysis Result</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { background: #181b28; color: #fff; font-family: 'Segoe UI', Arial, sans-serif; }
         .result-box { max-width: 520px; margin: 60px auto; background: #23263a; border-radius: 18px; padding: 38px 28px; }
         .summary { background: #25274d; border-radius: 10px; padding: 24px 18px; margin-top: 20px; }
         .chat-area { margin-top: 35px; }
-        .chat-area textarea { width: 99%; border-radius:10px; padding:10px; }
-        .chat-area button { margin-top:12px; background:#5691fc; color:#fff; border:none; border-radius:8px; padding:9px 30px; font-size:1em; cursor:pointer; }
-        .user-msg, .ai-reply { margin-top:12px; }
+        .chat-area textarea { width: 99%; border-radius:10px; padding:10px; background: #191c22; color: #fff; border: none; font-family: 'Segoe UI', Arial, sans-serif; font-size: 1em; }
+        .chat-area button { margin-top:12px; background:#5691fc; color:#fff; border:none; border-radius:8px; padding:9px 30px; font-size:1em; cursor:pointer; transition: background .2s; }
+        .chat-area button:hover { background: #1d4db6; }
+        .user-msg, .ai-reply { margin-top:12px; line-height: 1.6; }
         .ai-reply { background:#2d3660; padding:15px; border-radius:10px; }
+
+        /* --- 新增：加载效果的样式 --- */
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(24, 27, 40, 0.85); /* 半透明背景 */
+            display: none; /* 默认隐藏 */
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 9999; /* 确保在最顶层 */
+            backdrop-filter: blur(5px); /* 毛玻璃效果 */
+        }
+
+        .spinner {
+            border: 6px solid #f3f3f333; /* 浅色圆环 */
+            border-top: 6px solid #5691fc; /* 蓝色加载部分 */
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1.5s linear infinite; /* 旋转动画 */
+        }
+
+        #loading-overlay p {
+            color: #e0e0e0;
+            margin-top: 20px;
+            font-size: 1.2em;
+            letter-spacing: 1px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* --- 样式结束 --- */
+
     </style>
 </head>
 <body>
+
+<!-- 新增：加载效果的HTML结构 -->
+<div id="loading-overlay">
+    <div class="spinner"></div>
+    <p>AI nutritionist is thinking...</p>
+</div>
+
 <div class="result-box">
     <h2>Dietician's Analysis</h2>
     <div>Date: {{ start_date }} ~ {{ end_date }}</div>
@@ -24,7 +72,8 @@
 
     <div class="chat-area">
         <h3 style="margin-top:24px;">Ask Your Dietician</h3>
-        <form method="post" action="{{ url_for('dietician_result') }}">
+        <!-- 给表单添加一个ID -->
+        <form id="dietician-form" method="post" action="{{ url_for('dietician_result') }}">
             <input type="hidden" name="start_date" value="{{ start_date }}">
             <input type="hidden" name="end_date" value="{{ end_date }}">
             <textarea name="user_message" rows="3" placeholder="Type your nutrition question here..." required></textarea>
@@ -42,5 +91,19 @@
         <a href="{{ url_for('dietician_select') }}" style="color:#83d1ff;">Back to Date Selection</a>
     </div>
 </div>
+
+<!-- 新增：控制加载效果的JavaScript -->
+<script>
+    const form = document.getElementById('dietician-form');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    form.addEventListener('submit', function() {
+        // 检查textarea是否为空，防止空提交也显示加载
+        const message = form.querySelector('textarea[name="user_message"]').value;
+        if (message.trim() !== '') {
+            loadingOverlay.style.display = 'flex';
+        }
+    });
+</script>
+
 </body>
 </html>

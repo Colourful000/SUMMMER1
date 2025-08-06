@@ -83,6 +83,44 @@
             box-shadow: 0 2px 10px #0003;
         }
 
+        /* --- 新增：加载效果的样式 --- */
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(25, 27, 36, 0.85); /* 半透明背景 */
+            display: none; /* 默认隐藏 */
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 9999; /* 确保在最顶层 */
+            backdrop-filter: blur(5px); /* 毛玻璃效果 */
+        }
+
+        .spinner {
+            border: 6px solid #f3f3f333; /* 浅色圆环 */
+            border-top: 6px solid #4f8cff; /* 蓝色加载部分 */
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1.5s linear infinite; /* 旋转动画 */
+        }
+
+        #loading-overlay p {
+            color: #e0e0e0;
+            margin-top: 20px;
+            font-size: 1.2em;
+            letter-spacing: 1px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* --- 样式结束 --- */
+
         @media (max-width: 520px) {
             .upload-container {
                 padding: 18px 4vw;
@@ -91,21 +129,24 @@
     </style>
 </head>
 <body>
+
+<!-- 新增：加载效果的HTML结构 -->
+<div id="loading-overlay">
+    <div class="spinner"></div>
+    <p>Analysing your food, please wait...</p>
+</div>
+
 <div class="upload-container">
     <h2><i class="fa-solid fa-image"></i> Upload Food Image</h2>
-    <!-- 👇👇👇 改这里，action 改为 url_for('upload_food') 👇👇👇 -->
     <form id="upload-form" action="{{ url_for('upload_food') }}" method="POST" enctype="multipart/form-data">
         <label class="custom-file-upload">
             <input type="file" name="file" id="file-input" accept="image/*" required onchange="previewImage(event)">
             <i class="fa-solid fa-cloud-arrow-up"></i> Choose Image
         </label>
-        <!-- ✅ 添加保存历史记录选项 -->
         <label style="display: block; margin-top: 10px; font-size: 0.95em;">
             <input type="checkbox" name="save_history" value="true">
             Save this result to <strong>"My Nutrition"</strong>
         </label>
-
-        <!-- tag selection start -->
         <label for="tag" style="display:block; margin-top: 14px; font-size: 0.95em;">
             Select a meal tag:
             <select name="tag" id="tag" required style="margin-left: 8px; border-radius: 6px; padding: 2px 8px;">
@@ -124,6 +165,7 @@
     </form>
     <a href="{{ url_for('dashboard') }}" class="back-link">← Back to Dashboard</a>
 </div>
+
 <script>
     function previewImage(event) {
         const input = event.target;
@@ -140,5 +182,15 @@
         }
     }
 </script>
+
+<!-- 新增：控制加载效果的JavaScript -->
+<script>
+    const form = document.getElementById('upload-form'); // 注意：ID是 upload-form
+    const loadingOverlay = document.getElementById('loading-overlay');
+    form.addEventListener('submit', function() {
+        loadingOverlay.style.display = 'flex';
+    });
+</script>
+
 </body>
 </html>

@@ -19,6 +19,8 @@ import whisper
 import json
 import pandas as pd
 import google.generativeai as genai
+from PIL import Image, ExifTags
+
 NUTRITION_DF = pd.read_csv('nutrition_db.csv')
 
 
@@ -53,8 +55,7 @@ def create_app():
         【英文版】使用Gemini API来估算图片中食物的重量。
         这个版本会用英文进行推理。
         """
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        # --- 指令已修改为英文 ---
+        model = genai.GenerativeModel('gemini-1.5-pro-latest')
         prompt = """
         You are a top-tier nutritionist skilled in visual weight estimation.
         Please analyze the image I provide and estimate the weight of the main food item in grams.
@@ -80,12 +81,10 @@ def create_app():
 
             response = model.generate_content([prompt, img])
 
-            # <<< 关键的调试步骤 >>>
             print("\n--- 已收到Gemini的原始回复 (下方是完整内容) ---")
             print(response.text)
             print("--- 原始回复结束 ---\n")
 
-            # 尝试清理并解析JSON
             cleaned_text = response.text.strip()
             if cleaned_text.startswith("```json"):
                 cleaned_text = cleaned_text[7:]
@@ -118,10 +117,10 @@ def create_app():
             if user and check_password_hash(user.password, password):
                 session['user_id'] = user.id
                 session['username'] = user.username
-                flash('Login successful!', 'success')  # ← 这里
+                flash('Login successful!', 'success')
                 return redirect(url_for('dashboard'))
             else:
-                flash('Invalid username or password', 'danger')  # ← 这里
+                flash('Invalid username or password', 'danger')
                 return redirect(url_for('login'))
         return render_template('login.html', show_register=False)
 
@@ -132,7 +131,8 @@ def create_app():
         if 'user_id' not in session:
             flash('Please log in first!')
             return redirect(url_for('login'))
-        user = User.query.get(session['user_id'])
+        # --- 关键修复：使用现代的 db.session.get() 方法 ---
+        user = db.session.get(User, session['user_id'])
         return render_template('dashboard.html', username=session.get('username'), user=user)
 
     # -------- 用户注册 --------
@@ -179,36 +179,41 @@ def create_app():
                 flash('No file uploaded')
                 return redirect(url_for('upload_food'))
 
-            # 1. Save the uploaded file
             filename, filepath, filetype = process_upload_file(request)
 
-            # 2. Run YOLO detection to get food name and (possibly) nutrition
+            try:
+                image = Image.open(filepath)
+                orientation_tag = next((tag for tag, name in ExifTags.TAGS.items() if name == 'Orientation'), None)
+                if orientation_tag and hasattr(image, '_getexif') and image._getexif() is not None:
+                    exif = dict(image._getexif().items())
+                    if exif.get(orientation_tag) == 3:
+                        image = image.rotate(180, expand=True)
+                    elif exif.get(orientation_tag) == 6:
+                        image = image.rotate(270, expand=True)
+                    elif exif.get(orientation_tag) == 8:
+                        image = image.rotate(90, expand=True)
+                image.save(filepath)
+                print(f"Image orientation corrected and saved to {filepath}")
+            except Exception as e:
+                print(f"Could not process EXIF orientation tag for {filepath}: {e}")
+                pass
+
             out_name, output_path, output_type, result_dict = process_image_file(
                 filename, filepath, "yolov8s", False, False, 0.15, 0.5, False, False
             )
 
-            # 3. Get food name from YOLO
             if result_dict and 'names' in result_dict and result_dict['names']:
                 food_name = result_dict['names'][0]
-                # Try to get nutrition from YOLO result first
                 nutrients = {}
-                idx = 0  # Use first detected item
+                idx = 0
                 for k in ['calories', 'protein', 'fat', 'carbs', 'fiber']:
-                    if k in result_dict:
-                        try:
-                            nutrients[k] = result_dict[k][idx]
-                        except Exception:
-                            nutrients[k] = None
-                    else:
-                        nutrients[k] = None
-                # If all values are None, fallback to csv
+                    nutrients[k] = result_dict.get(k, [None])[idx]
                 if all(v is None for v in nutrients.values()):
                     nutrients = get_nutrient_from_db(food_name)
             else:
                 food_name = "Unknown"
                 nutrients = {k: None for k in ['calories', 'protein', 'fat', 'carbs', 'fiber']}
 
-            # 4. Use Gemini ONLY for weight estimation
             gemini_result = estimate_weight_with_gemini(filepath)
             if gemini_result:
                 estimated_weight = int(gemini_result.get('estimated_weight_g', 200))
@@ -217,35 +222,26 @@ def create_app():
                 estimated_weight = 200
                 estimation_method = "Weight estimation by Gemini failed, used default."
 
-            # 5. Scale nutrition to total portion if available
+            final_nutrients = nutrients
             if all(v is not None for v in nutrients.values()):
                 scaling_factor = estimated_weight / 100.0
                 final_nutrients = {k: round(v * scaling_factor, 2) for k, v in nutrients.items()}
-            else:
-                final_nutrients = nutrients
 
-            # 6. Prepare data and call LLM for nutrition advice
             user_info = {}
             meal_type = request.form.get('tag')
             if 'user_id' in session:
-                user = User.query.get(session['user_id'])
+                # --- 关键修复：使用现代的 db.session.get() 方法 ---
+                user = db.session.get(User, session['user_id'])
                 if user:
                     user_info = {
-                        "gender": user.gender,
-                        "age": user.age,
-                        "height": user.height,
-                        "weight": user.weight,
-                        "diet_goal": user.diet_goal,
-                        "special_diet": user.special_diet,
-                        "activity_level": user.activity_level
+                        "gender": user.gender, "age": user.age, "height": user.height,
+                        "weight": user.weight, "diet_goal": user.diet_goal,
+                        "special_diet": user.special_diet, "activity_level": user.activity_level
                     }
 
             data_for_advice = {
-                "food": food_name,
-                "nutrients": final_nutrients,
-                "user_info": user_info,
-                "meal_type": meal_type,
-                "estimated_weight": estimated_weight,
+                "food": food_name, "nutrients": final_nutrients, "user_info": user_info,
+                "meal_type": meal_type, "estimated_weight": estimated_weight,
                 "estimation_method": estimation_method
             }
 
@@ -254,7 +250,7 @@ def create_app():
                 "When responding, you must use only full, natural sentences and never use any bullet points, numbers, dashes, asterisks, or any other formatting symbols. "
                 "Do not use bold, italics, code blocks, or markdown. Your answer should always be a single, flowing paragraph, not separated into sections or lists. "
                 "Never use rhetorical or leading questions. Just give a direct, friendly, and informative nutrition analysis, as if you are talking to the user face to face. "
-                "Your response should be highly relevant, concise, and about 120 words."
+                "Your response should be highly relevant, concise, and about 60 words."
             )
 
             prompt_for_advice = build_prompt(data_for_advice)
@@ -272,7 +268,6 @@ def create_app():
             except Exception as e:
                 ai_advice = f"AI analysis failed: {e}"
 
-            # 7. Save to history if requested
             save_history = request.form.get('save_history') == 'true'
             if save_history and 'user_id' in session:
                 tag = request.form.get('tag')
@@ -286,7 +281,6 @@ def create_app():
                 db.session.add(history)
                 db.session.commit()
 
-            # 8. Render result page
             return render_template(
                 'analyze_result.html',
                 food_name=food_name,
@@ -331,15 +325,12 @@ def create_app():
 
     @app.route('/speech_to_text', methods=['POST'])
     def speech_to_text():
-        # 确保 tmp 文件夹存在
         if not os.path.exists('./tmp'):
             os.makedirs('./tmp')
         audio_file = request.files['audio']
         audio_path = f"./tmp/{audio_file.filename}"
         audio_file.save(audio_path)
-        # 转文字
         result = model.transcribe(audio_path, language='en')
-        # 处理完后立刻删除临时文件
         os.remove(audio_path)
         return jsonify({'text': result['text']})
 
@@ -350,64 +341,49 @@ def create_app():
             return redirect(url_for('login'))
 
         if request.method == 'POST':
-            # 1. 获取前端数据
             food_text = request.form.get('food_text', '').strip()
             save_history = request.form.get('save_history') == 'true'
             tag = request.form.get('tag', None)
             estimated_weight = request.form.get('weight_input')
 
-            # 2. 处理重量输入（无则用默认200）
             try:
                 estimated_weight = int(estimated_weight) if estimated_weight else 200
             except Exception:
                 estimated_weight = 200
 
-            # 3. 查找营养库
             nutrients = {k: None for k in ['calories', 'protein', 'fat', 'carbs', 'fiber']}
             try:
                 result = NUTRITION_DF[NUTRITION_DF['name'].str.lower().str.contains(food_text.lower())]
                 if not result.empty:
                     row = result.iloc[0]
                     nutrients = {
-                        'calories': float(row['calories']),
-                        'protein': float(row['protein']),
-                        'fat': float(row['fat']),
-                        'carbs': float(row['carbs']),
+                        'calories': float(row['calories']), 'protein': float(row['protein']),
+                        'fat': float(row['fat']), 'carbs': float(row['carbs']),
                         'fiber': float(row['fiber']),
                     }
             except Exception as e:
                 print('CSV 查找异常:', e)
-                # nutrients 仍为 None
 
-            # 4. 按重量换算（所有营养素都有数值时才缩放，否则原样）
             final_nutrients = nutrients.copy()
             if all(v is not None for v in nutrients.values()):
                 scaling_factor = estimated_weight / 100.0
                 final_nutrients = {k: round(v * scaling_factor, 2) for k, v in nutrients.items()}
 
-            # 5. 加入用户个性化资料
             user_info = {}
             meal_type = tag
             if 'user_id' in session:
-                user = User.query.get(session['user_id'])
+                # --- 关键修复：使用现代的 db.session.get() 方法 ---
+                user = db.session.get(User, session['user_id'])
                 if user:
                     user_info = {
-                        "gender": user.gender,
-                        "age": user.age,
-                        "height": user.height,
-                        "weight": user.weight,
-                        "diet_goal": user.diet_goal,
-                        "special_diet": user.special_diet,
-                        "activity_level": user.activity_level
+                        "gender": user.gender, "age": user.age, "height": user.height,
+                        "weight": user.weight, "diet_goal": user.diet_goal,
+                        "special_diet": user.special_diet, "activity_level": user.activity_level
                     }
 
-            # 6. 构造AI分析输入
             data = {
-                "food": food_text,
-                "nutrients": final_nutrients,
-                "user_info": user_info,
-                "meal_type": meal_type,
-                "estimated_weight": estimated_weight,
+                "food": food_text, "nutrients": final_nutrients, "user_info": user_info,
+                "meal_type": meal_type, "estimated_weight": estimated_weight,
                 "estimation_method": "Manual input or default"
             }
             system_prompt = (
@@ -415,13 +391,13 @@ def create_app():
                 "When responding, you must use only full, natural sentences and never use any bullet points, numbers, dashes, asterisks, or any other formatting symbols. "
                 "Do not use bold, italics, code blocks, or markdown. Your answer should always be a single, flowing paragraph, not separated into sections or lists. "
                 "Never use rhetorical or leading questions. Just give a direct, friendly, and informative nutrition analysis, as if you are talking to the user face to face. "
-                "Your response should be highly relevant, concise, and about 120 words."
+                "Your response should be highly relevant, concise, and about 60 words."
             )
             prompt = build_prompt(data)
             ai_advice = ""
             try:
                 response = client.chat.completions.create(
-                    model="deepseek-reasoner",
+                    model="deepseek-chat",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
@@ -432,7 +408,6 @@ def create_app():
             except Exception as e:
                 ai_advice = f"AI analysis failed: {e}"
 
-            # 7. 保存历史
             if save_history and 'user_id' in session:
                 history = AnalysisHistory(
                     user_id=session['user_id'],
@@ -444,7 +419,6 @@ def create_app():
                 db.session.add(history)
                 db.session.commit()
 
-            # 8. 返回分析结果页面（显示食物、营养素、AI建议、估算重量等）
             return render_template(
                 'analyze_result.html',
                 food_name=food_text,
@@ -453,7 +427,6 @@ def create_app():
                 estimated_weight=estimated_weight,
                 estimation_method="Manual input or default"
             )
-        # GET请求，直接渲染语音输入页面
         return render_template('voice_input.html')
 
     @app.route('/camera_upload', methods=['GET'])
@@ -473,9 +446,9 @@ def create_app():
         if 'user_id' not in session:
             flash('Please log in first!')
             return redirect(url_for('login'))
-        user = User.query.get(session['user_id'])
+        # --- 关键修复：使用现代的 db.session.get() 方法 ---
+        user = db.session.get(User, session['user_id'])
         if request.method == 'POST':
-            # 获取表单内容并保存
             user.gender = request.form.get('gender')
             user.age = request.form.get('age')
             user.height = request.form.get('height')
@@ -483,15 +456,11 @@ def create_app():
             user.diet_goal = request.form.get('diet_goal')
             user.special_diet = request.form.get('special_diet')
             user.activity_level = request.form.get('activity_level')
-            # 头像上传后端后续补充
             db.session.commit()
             flash('Profile updated successfully!', 'success')
             return redirect(url_for('dashboard'))
         return render_template('profile.html', user=user)
 
-    from datetime import datetime, timedelta
-
-    # 选择日期页面
     @app.route('/dietician_select', methods=['GET'])
     def dietician_select():
         if 'user_id' not in session:
@@ -499,31 +468,23 @@ def create_app():
             return redirect(url_for('login'))
         return render_template('dietician_select.html')
 
-    # 结果分析页面
-    from flask import request, render_template, flash, redirect, url_for, session
-    from datetime import datetime, timedelta
-    import json
-
     @app.route('/dietician_result', methods=['GET', 'POST'])
     def dietician_result():
         if 'user_id' not in session:
             flash('Please log in first!')
             return redirect(url_for('login'))
 
-        # 支持GET和POST参数，方便页面回跳
         start_date = request.form.get('start_date') or request.args.get('start_date')
         end_date = request.form.get('end_date') or request.args.get('end_date')
         user_message = request.form.get('user_message', '').strip() if request.method == 'POST' else ''
 
-        # 日期解析
         try:
             start = datetime.strptime(start_date, "%Y-%m-%d")
-            end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)  # 包含结束当天
-        except Exception:
+            end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+        except (ValueError, TypeError):
             flash('Invalid date.')
             return redirect(url_for('dietician_select'))
 
-        # 查询历史
         history = AnalysisHistory.query.filter(
             AnalysisHistory.user_id == session['user_id'],
             AnalysisHistory.timestamp >= start,
@@ -537,20 +498,14 @@ def create_app():
             except Exception:
                 nutrients = {}
             history_summaries.append({
-                "food": record.food_name,
-                "nutrients": nutrients,
-                "tag": record.tag,
-                "ai_advice": record.ai_advice
+                "food": record.food_name, "nutrients": nutrients,
+                "tag": record.tag, "ai_advice": record.ai_advice
             })
 
-        # 构建基础营养历史上下文
-        base_context = (
-            "Here are the user's nutrition records for the selected dates:\n"
-        )
+        base_context = "Here are the user's nutrition records for the selected dates:\n"
         for h in history_summaries:
             base_context += f"Food: {h['food']}, Tag: {h['tag']}, Nutrients: {h['nutrients']}, Previous AI Advice: {h['ai_advice']}\n"
 
-        # 统一AI风格的system prompt
         system_prompt = (
             "You are a warm, conversational, board-certified dietician. "
             "When you answer, you must only provide nutrition advice, never discuss anything else. "
@@ -559,19 +514,15 @@ def create_app():
             "Never use dashes, hyphens, quotes, or any kind of list or numbered format. "
             "Respond only with full sentences, like you’re chatting face to face. "
             "Summarize what stands out, what concerns you, and what to change, but speak in a natural, supportive, flowing paragraph. "
-            "Maximum 180 words."
+            "Maximum 80 words."
         )
 
         ai_summary = ""
         ai_reply = None
 
-        # 首次打开或刷新，仅给分析总结
         if request.method == 'GET' or not user_message:
             if history_summaries:
-                summary_prompt = (
-                        base_context +
-                        "Please review these records and give the user a natural, spoken-style summary of their nutrition, pointing out main strengths and improvements, without using any lists or formatting."
-                )
+                summary_prompt = (base_context + "Please review these records and give the user a natural, spoken-style summary...")
                 try:
                     response = client.chat.completions.create(
                         model="deepseek-reasoner",
@@ -585,25 +536,13 @@ def create_app():
                     ai_summary = f"AI summary failed: {e}"
             else:
                 ai_summary = "No nutrition history found for the selected date range."
-            # 首次不显示对话内容
             return render_template(
-                'dietician_result.html',
-                summary=ai_summary,
-                start_date=start_date,
-                end_date=end_date,
-                user_message=None,
-                ai_reply=None
+                'dietician_result.html', summary=ai_summary,
+                start_date=start_date, end_date=end_date,
+                user_message=None, ai_reply=None
             )
-
-        # 用户提交提问
         else:
-            chat_prompt = (
-                    base_context +
-                    f"\nUser's question: {user_message}\n"
-                    "Please answer only as a nutritionist, referencing the user's nutrition history above. "
-                    "Never discuss anything outside of nutrition. Speak like a person, in normal sentences, not in lists or points."
-                    "Maximum 30 words."
-            )
+            chat_prompt = (base_context + f"\nUser's question: {user_message}\n" + "Please answer only as a nutritionist...")
             try:
                 response = client.chat.completions.create(
                     model="deepseek-reasoner",
@@ -617,12 +556,9 @@ def create_app():
                 ai_reply = f"AI reply failed: {e}"
 
             return render_template(
-                'dietician_result.html',
-                summary=None,  # 提问时不重复summary
-                start_date=start_date,
-                end_date=end_date,
-                user_message=user_message,
-                ai_reply=ai_reply
+                'dietician_result.html', summary=None,
+                start_date=start_date, end_date=end_date,
+                user_message=user_message, ai_reply=ai_reply
             )
 
     return app
@@ -635,37 +571,52 @@ def get_nutrient_from_db(food_name):
     if not result.empty:
         row = result.iloc[0]
         return {
-            'calories': float(row['calories']),
-            'protein': float(row['protein']),
-            'fat': float(row['fat']),
-            'carbs': float(row['carbs']),
+            'calories': float(row['calories']), 'protein': float(row['protein']),
+            'fat': float(row['fat']), 'carbs': float(row['carbs']),
             'fiber': float(row['fiber']),
         }
     return {k: None for k in ['calories', 'protein', 'fat', 'carbs', 'fiber']}
 
-
-
-
-parser = argparse.ArgumentParser('Online Food Recognition')
-parser.add_argument('--ngrok', action='store_true', default=False, help="Run on local or ngrok")
-parser.add_argument('--host', type=str, default='localhost', help="Local IP")
-parser.add_argument('--port', type=int, default=5000, help="Local port")
-parser.add_argument('--debug', action='store_true', default=False, help="Run app in debug mode")
-args = parser.parse_args()
-
+# --- 主程序入口 ---
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser('Online Food Recognition')
+    parser.add_argument('--ngrok', action='store_true', default=False, help="Run on local or ngrok")
+    parser.add_argument('--host', type=str, default='localhost', help="Local IP")
+    parser.add_argument('--port', type=int, default=5000, help="Local port")
+    parser.add_argument('--debug', action='store_true', default=False, help="Run app in debug mode")
+    args = parser.parse_args()
+
     app = create_app()
 
-    for folder in [UPLOAD_FOLDER, DETECTION_FOLDER, SEGMENTATION_FOLDER, CSV_FOLDER, METADATA_FOLDER]:
-        os.makedirs(folder, exist_ok=True)
+    if __name__ == '__main__':
+        parser = argparse.ArgumentParser('Online Food Recognition')
+        parser.add_argument('--ngrok', action='store_true', default=False, help="Run on local or ngrok")
+        parser.add_argument('--host', type=str, default='localhost', help="Local IP")
+        parser.add_argument('--port', type=int, default=5000, help="Local port")
+        parser.add_argument('--debug', action='store_true', default=False, help="Run app in debug mode")
+        args = parser.parse_args()
 
-    if args.ngrok:
-        print("Enter your authtoken, which can be copied from https://dashboard.ngrok.com/get-started/your-authtoken")
-        conf.get_default().auth_token = getpass.getpass()
-        public_url = ngrok.connect(args.port).public_url
-        print(f" * ngrok tunnel \"{public_url}\" -> \"http://127.0.0.1:{args.port}/\"")
-        app.config['BASE_URL'] = public_url
-    else:
-        app.config['BASE_URL'] = f"http://{args.host}:{args.port}"
+        app = create_app()
 
-    app.run(host=args.host, port=args.port, debug=True)
+        basedir = os.path.abspath(os.path.dirname(__file__))
+        upload_folder_path = os.path.join(basedir, 'static', 'assets', 'uploads')
+        csv_folder_path = os.path.join(basedir, 'static', 'assets', 'csv')
+        detection_folder_path = os.path.join(basedir, 'static', 'assets', 'detection')
+        segmentation_folder_path = os.path.join(basedir, 'static', 'assets', 'segmentation')
+        metadata_folder_path = os.path.join(basedir, 'metadata')
+
+        os.makedirs(upload_folder_path, exist_ok=True)
+        os.makedirs(csv_folder_path, exist_ok=True)
+        os.makedirs(detection_folder_path, exist_ok=True)
+        os.makedirs(segmentation_folder_path, exist_ok=True)
+        os.makedirs(metadata_folder_path, exist_ok=True)
+
+        if args.ngrok:
+            public_url = ngrok.connect(args.port).public_url
+            print(f" * ngrok tunnel \"{public_url}\" -> \"http://127.0.0.1:{args.port}/\"")
+            app.config['BASE_URL'] = public_url
+        else:
+            app.config['BASE_URL'] = f"http://{args.host}:{args.port}"
+
+        app.run(host=args.host, port=args.port, debug=args.debug)
+

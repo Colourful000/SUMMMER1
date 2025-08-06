@@ -38,6 +38,11 @@
             transition: background 0.2s;
             border: none;
             outline: none;
+            /* --- 关键修复：禁止用户选择按钮上的文字 --- */
+            user-select: none;
+            -webkit-user-select: none; /* 兼容 Safari */
+            -moz-user-select: none;    /* 兼容 Firefox */
+            -ms-user-select: none;     /* 兼容 IE/Edge */
         }
         .voice-record-btn.recording {
             background: #e84747;
@@ -87,9 +92,55 @@
             margin-bottom: 8px;
             margin-top: 2px;
         }
+
+        /* --- 加载效果的样式 --- */
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(25, 27, 36, 0.85); /* 半透明背景 */
+            display: none; /* 默认隐藏 */
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 9999; /* 确保在最顶层 */
+            backdrop-filter: blur(5px); /* 毛玻璃效果 */
+        }
+
+        .spinner {
+            border: 6px solid #f3f3f333; /* 浅色圆环 */
+            border-top: 6px solid #4f8cff; /* 蓝色加载部分 */
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1.5s linear infinite; /* 旋转动画 */
+        }
+
+        #loading-overlay p {
+            color: #e0e0e0;
+            margin-top: 20px;
+            font-size: 1.2em;
+            letter-spacing: 1px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* --- 样式结束 --- */
+
     </style>
 </head>
 <body>
+
+<!-- 加载效果的HTML结构 -->
+<div id="loading-overlay">
+    <div class="spinner"></div>
+    <p>Analysing your food, please wait...</p>
+</div>
+
 <div class="upload-container">
     <h2><i class="fa-solid fa-microphone"></i> Voice Input Food Name</h2>
     <form id="voice-form" action="{{ url_for('voice_input') }}" method="POST" autocomplete="off">
@@ -144,22 +195,20 @@ const voiceBtn = document.getElementById('voice-record-btn');
 const voiceResult = document.getElementById('voice-result');
 const foodInput = document.getElementById('food_text');
 const analyzeBtn = document.getElementById('analyze-btn');
+const loadingOverlay = document.getElementById('loading-overlay');
+const voiceForm = document.getElementById('voice-form');
 
 let isRecording = false;
 
-// 检查浏览器支持
 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     voiceResult.textContent = 'This browser does not support microphone access.';
     voiceBtn.disabled = true;
 }
 
-// 提前请求麦克风权限
 window.onload = function() {
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(() => {
-                // 权限ok
-            })
+            .then(() => {})
             .catch(() => {
                 voiceResult.textContent = 'Please allow microphone access in your browser/app settings!';
                 voiceBtn.disabled = true;
@@ -186,7 +235,6 @@ voiceBtn.onmousedown = async function(e) {
             voiceBtn.classList.remove('recording');
             voiceResult.textContent = "Recognizing...";
             isRecording = false;
-            // 上传语音文件
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
             const formData = new FormData();
             formData.append('audio', audioBlob, 'voice.webm');
@@ -221,9 +269,14 @@ voiceBtn.onmouseup = function() {
         mediaRecorder.stop();
     }
 };
-// 手机端支持触摸
 voiceBtn.ontouchstart = voiceBtn.onmousedown;
 voiceBtn.ontouchend = voiceBtn.onmouseup;
+
+voiceForm.addEventListener('submit', function() {
+    if (!analyzeBtn.disabled) {
+        loadingOverlay.style.display = 'flex';
+    }
+});
 </script>
 </body>
 </html>

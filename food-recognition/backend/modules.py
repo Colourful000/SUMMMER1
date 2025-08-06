@@ -354,19 +354,18 @@ def get_prediction(
         seg_pipeline = SegmentationPipeline(opts, input_path)
         output_path = seg_pipeline.inference()
 
-        # get real output for segmentation task to display in webapp
         output_path = output_path.split('/')[-3:]
         output_path = os.path.join(
             output_path[0], output_path[1], output_path[2])
 
-        # segmentation 分支随便给 result_dict None/空字典，保证3个返回值
         return output_path, 'semantic', None
 
-    # get hashed key from image path
     ori_hashed_key = os.path.splitext(os.path.basename(input_path))[0]
 
     ori_img = cv2.imread(input_path)
-    ori_img = np.array(ori_img, dtype=np.uint16)
+    if ori_img is None:
+        raise FileNotFoundError(f"Could not read image file at path: {input_path}")
+
     ori_img = cv2.cvtColor(ori_img, cv2.COLOR_BGR2RGB)
     img_h, img_w, _ = ori_img.shape
 
@@ -382,14 +381,34 @@ def get_prediction(
 
         det_args = InferenceArguments(key="detection")
         opts = Opts(det_args).parse_args()
+
+        # --- 关键修复：自动检测并使用最佳设备(GPU或CPU) ---
+        import torch
+        if torch.cuda.is_available():
+            opts.device = 'cuda:0'
+            print("CUDA is available. Using GPU.")
+        else:
+            opts.device = 'cpu'
+            print("CUDA not available. Using CPU.")
+        # --- 修复结束 ---
+
         det_pipeline = DetectionPipeline(opts, args)
         class_names = det_pipeline.class_names
 
         result_dict = det_pipeline.inference()
 
-        result_dict['boxes'] = result_dict['boxes'][0]
-        result_dict['labels'] = result_dict['labels'][0]
-        result_dict['scores'] = result_dict['scores'][0]
+        # --- 处理“未检测到任何物体”的情况 ---
+        if not result_dict['boxes']:
+            result_dict = {
+                'boxes': [],
+                'labels': [],
+                'scores': []
+            }
+        else:
+            result_dict['boxes'] = result_dict['boxes'][0]
+            result_dict['labels'] = result_dict['labels'][0]
+            result_dict['scores'] = result_dict['scores'][0]
+        # --- 处理结束 ---
 
     else:
         result_dict, class_names = ensemble_models(
@@ -420,6 +439,5 @@ def get_prediction(
     df.set_index('names').T.to_csv(os.path.join(
         CSV_FOLDER, ori_hashed_key + '_info2.csv'))
 
-    # 关键：这里检测分支也返回3个值
     return output_path, 'detection', result_dict
 

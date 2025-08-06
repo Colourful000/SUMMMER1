@@ -3,27 +3,159 @@
 <head>
     <meta charset="UTF-8">
     <title>My Dietician</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { background: #181b28; color: #fff; font-family: 'Segoe UI', Arial, sans-serif; }
-        .center-box { max-width: 440px; margin: 60px auto; background: #23263a; border-radius: 18px; padding: 38px 28px; text-align:center; }
-        label, input { font-size: 1.1em; margin:10px 0; }
-        button { margin-top:22px; background: #5691fc; color: #fff; border: none; padding: 12px 40px; border-radius: 8px; font-size: 1.1em; cursor:pointer; }
+        body {
+            background: #181b28;
+            color: #fff;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .center-box {
+            width: 100%;
+            max-width: 440px;
+            margin: 20px auto;
+            background: #23263a;
+            border-radius: 18px;
+            padding: 38px 28px;
+            text-align:center;
+            box-sizing: border-box;
+        }
+        .date-picker-container div {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        label {
+            font-size: 1.1em;
+            margin-bottom: 8px;
+        }
+        input[type="date"] {
+            padding: 10px;
+            border-radius: 8px;
+            border: none;
+            background: #191c22;
+            color: #fff;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 1em;
+            width: 90%;
+            max-width: 250px;
+        }
+        button {
+            margin-top:22px;
+            background: #5691fc;
+            color: #fff;
+            border: none;
+            padding: 12px 40px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            cursor:pointer;
+            transition: background .2s;
+            width: 100%;
+            max-width: 280px;
+        }
+        button:hover { background: #1d4db6; }
+
+        /* --- 新增返回链接样式 --- */
+        .back-link {
+            display: block;
+            margin-top: 25px;
+            color: #83d1ff;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        /* --- 样式结束 --- */
+
+        /* --- 加载效果的样式 --- */
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(24, 27, 40, 0.85); /* 半透明背景 */
+            display: none; /* 默认隐藏 */
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 9999; /* 确保在最顶层 */
+            backdrop-filter: blur(5px); /* 毛玻璃效果 */
+        }
+
+        .spinner {
+            border: 6px solid #f3f3f333; /* 浅色圆环 */
+            border-top: 6px solid #5691fc; /* 蓝色加载部分 */
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1.5s linear infinite; /* 旋转动画 */
+        }
+
+        #loading-overlay p {
+            color: #e0e0e0;
+            margin-top: 20px;
+            font-size: 1.2em;
+            letter-spacing: 1px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* --- 样式结束 --- */
     </style>
 </head>
 <body>
+
+<!-- 加载效果的HTML结构 -->
+<div id="loading-overlay">
+    <div class="spinner"></div>
+    <p>AI nutritionist is thinking...</p>
+</div>
+
 <div class="center-box">
     <h2>My Dietician</h2>
-    <form method="post" action="{{ url_for('dietician_result') }}">
-        <div>
-            <label for="start_date">From:</label>
-            <input type="date" name="start_date" id="start_date" required>
-        </div>
-        <div>
-            <label for="end_date">To:</label>
-            <input type="date" name="end_date" id="end_date" required>
+    <form id="date-select-form" method="post" action="{{ url_for('dietician_result') }}">
+        <div class="date-picker-container">
+            <div>
+                <label for="start_date">From:</label>
+                <input type="date" name="start_date" id="start_date" required>
+            </div>
+            <div>
+                <label for="end_date">To:</label>
+                <input type="date" name="end_date" id="end_date" required>
+            </div>
         </div>
         <button type="submit">Analyze</button>
     </form>
+
+    <!-- 新增：返回主页的链接 -->
+    <a href="{{ url_for('dashboard') }}" class="back-link">← Back to Dashboard</a>
 </div>
+
+<!-- 控制加载效果的JavaScript -->
+<script>
+    const form = document.getElementById('date-select-form');
+    const loadingOverlay = document.getElementById('loading-overlay');
+
+    form.addEventListener('submit', function(event) {
+        const startDate = document.getElementById('start_date').value;
+        const endDate = document.getElementById('end_date').value;
+
+        if (startDate && endDate) {
+            loadingOverlay.style.display = 'flex';
+        }
+    });
+</script>
+
 </body>
 </html>
